@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 
-from tools import ServerSSH, Config
+from tools import Server, Config
 
 
 if __name__ == "__main__":
@@ -27,6 +27,9 @@ if __name__ == "__main__":
 
     # Get the virtio file
     virtio = cfg.get('VIRTIO', 'VIRTIO')
+
+    # First copy the iso file to the SUT
+    
 
 
 

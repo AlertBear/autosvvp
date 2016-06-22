@@ -37,19 +37,51 @@ class Server(object):
         return out
 
     def scp(self, file, rmtdir):
+        # Check whether the sshd is enabled on the remote server
+        try:
+            self.sendcmd('hostname', check=False)
+        except Exception:
+            raise ExecError("Failed: Check the password or sshd on remote server")
+
+        scp_put = '''
+        set timeout 600
+        spawn scp %s %s@%s:%s
+        expect "(yes/no)?" {
+        send "yes\r"
+        expect "password:"
+        send "%s\r"
+        } "password:" {send "%s\r"}
+        expect eof
+        exit'''
+
+        cmd = "echo '%s' > scp_put.cmd" % (scp_put % (
+            file,
+            self.username,
+            self.hostname,
+            rmtdir,
+            self.passwd,
+            self.passwd)
+        )
+        execute(cmd)
+        execute("expect scp_put.cmd")
+        execute("rm scp_put.cmd")
+
+        # Check whether the file were copied successfully
+
+
+        '''
         cmd = "scp %s %s@%s:%s" % (file, self.username, self.hostname, rmtdir)
         child = pexpect.spawn(cmd)
         child.send('\r')
-        prompts = ['password:', 'lost connection', '#', '$', pexpect.TIMEOUT, pexpect.EOF]
+        prompts = ['(yes/no)?', 'password:', '#', '$', 'lost connection', pexpect.TIMEOUT, pexpect.EOF]
 
         while True:
             i = child.expect(prompts, timeout=600)
 
             if i == 0:
-                child.sendline(self.passwd)
-                child.expect()
+                child.sendline('yes')
             elif i == 1:
-                raise Exception("Failed to scp due to incorrect password or the sshd status on remote server")
+                child.sendline(passwd)
             elif i == 2:
                 child.close()
                 break
@@ -57,10 +89,12 @@ class Server(object):
                 child.close()
                 break
             elif i == 4:
-                raise Exception("Failed to scp due to TIMEOUT")
+                raise Exception("Failed to scp due to incorrect password or the sshd status on remote server")
             elif i == 5:
+                raise Exception("Failed to scp due to TIMEOUT")
+            elif i == 6:
                 raise Exception("Failed to scp due to EOF")
-
+        '''
 
 class Config:
     def __init__(self, path):
@@ -121,8 +155,8 @@ def execute(cmd, check=True):
 # Simple test for the class Server
 if __name__ == "__main__":
     testserver = sys.argv[1]
-    username = "root"
-    passwd = "redhat"
+    username = sys.argv[2]
+    passwd = sys.argv[3]
     mserver = Server(testserver, username, passwd)
 
     file = '/tmp/server.py'
