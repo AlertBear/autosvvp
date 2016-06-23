@@ -43,15 +43,15 @@ class Server(object):
             raise ExecError("Reason: password or sshd on remote server")
 
         scp_put = '''
-        set timeout 600
-        spawn scp %s %s@%s:%s
-        expect "(yes/no)?" {
-        send "yes\r"
-        expect "password:"
-        send "%s\r"
-        } "password:" {send "%s\r"}
-        expect eof
-        exit'''
+set timeout 600
+spawn scp %s %s@%s:%s
+expect "(yes/no)?" {
+send "yes\r"
+expect "password:"
+send "%s\r"
+} "password:" {send "%s\r"}
+expect eof
+exit'''
 
         cmd = "echo '%s' > /tmp/scp_put.cmd" % (scp_put % (
             local,
@@ -75,15 +75,14 @@ class Server(object):
     def gen_bridge(self, bridge, nic):
         # Copy the nic configure file to the remote server
         ifcfg_cfg = '''
-        DEVICE=%s
-        HWADDR=%s
-        BRIDGE=%s
-        ONBOOT=yes
-        NM_CONTROLLED=no
-        IPV6_AUTOCONF=no
-        PEERNTP=yes
-        IPV6INIT=no
-        '''
+DEVICE=%s
+HWADDR=%s
+BRIDGE=%s
+ONBOOT=yes
+NM_CONTROLLED=no
+IPV6_AUTOCONF=no
+PEERNTP=yes
+IPV6INIT=no'''
         cmd_get_mac = "ifconfig -a |grep '^%s'" % nic
         output = self.sendcmd(cmd_get_mac)
         mac = output.split()[-1]
@@ -95,34 +94,46 @@ class Server(object):
         execute(cmd)
 
         self.scp("/tmp/ifcfg_nic.cfg", "/data/ifcfg_nic.cfg")
-        self.sendcmd("mv /data/ifcfg_nic.cmd /etc/sysconfig/network-script/ifcfg_%s" % nic)
+        self.sendcmd("mv -f /data/ifcfg_nic.cfg /etc/sysconfig/network-scripts/ifcfg-%s" % nic)
 
         # Copy the bridge configure file to the remote server
         ifcfg_br = '''
-        DEVICE=%s
-        TYPE=Bridge
-        DELAY=0
-        STP=off
-        ONBOOT=yes
-        BOOTPROTO=dhcp
-        DEFROUTE=yes
-        NM_CONTROLLED=no
-        IPV6_AUTOCONF=no
-        PEERNTP=yes
-        IPV6INIT=no
-        HOTPLUG=no
-        '''
+DEVICE=%s
+TYPE=Bridge
+DELAY=0
+STP=off
+ONBOOT=yes
+BOOTPROTO=dhcp
+DEFROUTE=yes
+NM_CONTROLLED=no
+IPV6_AUTOCONF=no
+PEERNTP=yes
+IPV6INIT=no
+HOTPLUG=no'''
         cmd = "echo '%s' > /tmp/ifcfg_br.cfg" % (ifcfg_br % (
-            nic,
-            mac,
             bridge))
         execute(cmd)
 
         self.scp("/tmp/ifcfg_br.cfg", "/data/ifcfg_br.cfg")
         execute("rm /tmp/ifcfg_br.cfg")
 
-        self.sendcmd("mv /data/ifcfg_nic.cfg /etc/sysconfig/network-script/ifcfg_%s" % bridge)
+        self.sendcmd("mv -f /data/ifcfg_br.cfg /etc/sysconfig/network-scripts/ifcfg-%s" % bridge)
 
+        # Delete the bridge if exists
+        cmd = "ifconfig %s" % bridge
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            pass
+        else:
+            # Get the device under the existing bridge
+            cmd = "brctl show"
+            cmd = "brctl delif %s %s" % bridge
+            pass
+
+        # Add the bridge and interface
+        cmd = "brctl addbr %s " % bridge
+        self.sendcmd(cmd)
         cmd = "brctl addif %s %s" % (bridge, nic)
         self.sendcmd(cmd)
 
@@ -137,11 +148,10 @@ class Server(object):
 
     def gen_qemu_ifup(self, bridge):
         qemu_ifup = '''
-        #!/bin/sh
-        switch=%s
-        /sbin/ifconfig $1 0.0.0.0 up
-        /usr/sbin/brctl addif ${switch} $1
-        '''
+#!/bin/sh
+switch=%s
+/sbin/ifconfig $1 0.0.0.0 up
+/usr/sbin/brctl addif ${switch} $1'''
         cmd = "echo '%s' > /tmp/qemu_ifup.cmd" % (qemu_ifup % (
             bridge))
         execute(cmd)
@@ -164,18 +174,17 @@ class Server(object):
         virtio = vm_info["virtio"]
 
         vm_install = '''
-        /usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
-        -uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
-        -smbios type=1,manufacturer='Red Hat',product=%s,version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
-        -nodefconfig -rtc base=localtime,driftfix=slew -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
-        -device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
-        -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
-        -netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
-        -vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
-        -fda %s \
-        -monitor stdio \
-        -boot menu=on
-        '''
+/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
+-uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
+-smbios type=1,manufacturer='Red Hat',product=%s,version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
+-nodefconfig -rtc base=localtime,driftfix=slew -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
+-device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-fda %s \
+-monitor stdio \
+-boot menu=on'''
         cmd = "echo '%s' > /tmp/vm_install.cmd" % (vm_install % (
             vm_name,
             cpu_mode,
@@ -202,17 +211,16 @@ class Server(object):
         disk = vm_info["disk"]
 
         vm_boot = '''
-        /usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
-        -uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
-        -smbios type=1,manufacturer='Red Hat',product=%s,version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
-        -nodefconfig -rtc base=localtime,driftfix=slew \
-        -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
-        -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
-        -netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
-        -vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
-        -monitor stdio \
-        -boot menu=on
-        '''
+/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
+-uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
+-smbios type=1,manufacturer='Red Hat',product=%s,version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
+-nodefconfig -rtc base=localtime,driftfix=slew \
+-drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-monitor stdio \
+-boot menu=on'''
         cmd = "echo '%s' > /tmp/vm_boot.cmd" % (vm_boot % (
             vm_name,
             cpu_mode,
@@ -289,15 +297,14 @@ def gen_bridge(hostname, user, passwd, bridge, nic):
 
     # Copy the nic configure file to the remote server
     ifcfg_cfg = '''
-    DEVICE=%s
-    HWADDR=%s
-    BRIDGE=%s
-    ONBOOT=yes
-    NM_CONTROLLED=no
-    IPV6_AUTOCONF=no
-    PEERNTP=yes
-    IPV6INIT=no
-    '''
+DEVICE=%s
+HWADDR=%s
+BRIDGE=%s
+ONBOOT=yes
+NM_CONTROLLED=no
+IPV6_AUTOCONF=no
+PEERNTP=yes
+IPV6INIT=no'''
     cmd_get_mac = "ifconfig -a |grep '^%s'" % nic
     output = server.sendcmd(cmd_get_mac)
     mac = output.split()[-1]
@@ -309,34 +316,33 @@ def gen_bridge(hostname, user, passwd, bridge, nic):
     execute(cmd)
 
     server.scp("/tmp/ifcfg_nic.cfg", "/data/ifcfg_nic.cfg")
-    server.sendcmd("mv /data/ifcfg_nic.cmd /etc/sysconfig/network-script/ifcfg_%s" % nic)
+    server.sendcmd("mv -f /data/ifcfg_nic.cfg /etc/sysconfig/network-scripts/ifcfg-%s" % nic)
 
     # Copy the bridge configure file to the remote server
     ifcfg_br = '''
-    DEVICE=%s
-    TYPE=Bridge
-    DELAY=0
-    STP=off
-    ONBOOT=yes
-    BOOTPROTO=dhcp
-    DEFROUTE=yes
-    NM_CONTROLLED=no
-    IPV6_AUTOCONF=no
-    PEERNTP=yes
-    IPV6INIT=no
-    HOTPLUG=no
-    '''
+DEVICE=%s
+TYPE=Bridge
+DELAY=0
+STP=off
+ONBOOT=yes
+BOOTPROTO=dhcp
+DEFROUTE=yes
+NM_CONTROLLED=no
+IPV6_AUTOCONF=no
+PEERNTP=yes
+IPV6INIT=no
+HOTPLUG=no'''
     cmd = "echo '%s' > /tmp/ifcfg_br.cfg" % (ifcfg_br % (
-        nic,
-        mac,
         bridge))
     execute(cmd)
 
     server.scp("/tmp/ifcfg_br.cfg", "/data/ifcfg_br.cfg")
     execute("rm /tmp/ifcfg_br.cfg")
 
-    server.sendcmd("mv /data/ifcfg_nic.cfg /etc/sysconfig/network-script/ifcfg_%s" % bridge)
+    server.sendcmd("mv -f /data/ifcfg_br.cfg /etc/sysconfig/network-scripts/ifcfg-%s" % bridge)
 
+    cmd = "brctl addbr %s " % bridge
+    server.sendcmd(cmd)
     cmd = "brctl addif %s %s" % (bridge, nic)
     server.sendcmd(cmd)
     cmd = "ifup %s" % bridge
@@ -347,18 +353,17 @@ def gen_bridge(hostname, user, passwd, bridge, nic):
 def gen_sut_vm_install(hostname, user, passwd, vm_name, cpu_mode, mem, core, product, version, iso, network_script, vritio):
     server = Server(hostname, user, passwd)
     vm_install = '''
-    /usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %s -smp %s,cores=2 \
-    -uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
-    -smbios type=1,manufacturer='Red Hat',product=%S,version=%S,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
-    -nodefconfig -rtc base=localtime,driftfix=slew -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
-    -device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0 -drive file=win2012r2.raw,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
-    -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
-    -netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
-    -vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
-    -fda virtio-win-1.7.5_amd64.vfd \
-    -monitor stdio \
-    -boot menu=on
-    '''
+/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %s -smp %s,cores=2 \
+-uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
+-smbios type=1,manufacturer='Red Hat',product=%S,version=%S,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
+-nodefconfig -rtc base=localtime,driftfix=slew -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
+-device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0 -drive file=win2012r2.raw,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-fda virtio-win-1.7.5_amd64.vfd \
+-monitor stdio \
+-boot menu=on'''
     cmd = "echo '%s' > /tmp/vm_install.cmd" % (vm_install % (
         vm_name,
         cpu_mode,
