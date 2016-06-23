@@ -4,6 +4,7 @@ import pxssh
 import sys
 import ConfigParser
 import subprocess
+import time
 
 
 class ExecError(Exception):
@@ -30,7 +31,7 @@ class Server(object):
         retcode = s.before.strip(retcode_cmd).strip()
         if check:
             if retcode != '0':
-                raise ExecError("[%s]: Execute [%s]:\n%s" % (self.hostname, cmd, out))
+                raise ExecError("[%s]-[%s] failed:\n%s" % (self.hostname, cmd, out))
             else:
                 return out
         return out
@@ -72,6 +73,8 @@ exit'''
         except ExecError:
             raise Exception("Reason: unknown")
 
+
+class Sut(Server):
     def gen_bridge(self, bridge, nic):
         # Copy the nic configure file to the remote server
         ifcfg_cfg = '''
@@ -93,8 +96,9 @@ IPV6INIT=no'''
             bridge))
         execute(cmd)
 
-        self.scp("/tmp/ifcfg_nic.cfg", "/data/ifcfg_nic.cfg")
-        self.sendcmd("mv -f /data/ifcfg_nic.cfg /etc/sysconfig/network-scripts/ifcfg-%s" % nic)
+        rmt_ifcfgnic = '/data' + '/ifcfg_nic.cfg'
+        self.scp("/tmp/ifcfg_nic.cfg", rmt_ifcfgnic)
+        self.sendcmd("mv -f %s /etc/sysconfig/network-scripts/ifcfg-%s" % (rmt_ifcfgnic, nic))
 
         # Copy the bridge configure file to the remote server
         ifcfg_br = '''
@@ -114,10 +118,11 @@ HOTPLUG=no'''
             bridge))
         execute(cmd)
 
-        self.scp("/tmp/ifcfg_br.cfg", "/data/ifcfg_br.cfg")
+        rmt_ifcfgbr = '/data' + '/ifcfg_br.cfg'
+        self.scp("/tmp/ifcfg_br.cfg", rmt_ifcfgbr)
         execute("rm /tmp/ifcfg_br.cfg")
 
-        self.sendcmd("mv -f /data/ifcfg_br.cfg /etc/sysconfig/network-scripts/ifcfg-%s" % bridge)
+        self.sendcmd("mv -f %s /etc/sysconfig/network-scripts/ifcfg-%s" % (rmt_ifcfgbr, bridge))
 
         # Delete the bridge if exists
         cmd = "ifconfig %s" % bridge
@@ -129,6 +134,8 @@ HOTPLUG=no'''
             # Get the device under the existing bridge
             cmd = "brctl show"
             cmd = "brctl delif %s %s" % bridge
+            cmd = "brctl delbr %s" % bridge
+            #????????????
             pass
 
         # Add the bridge and interface
@@ -147,19 +154,20 @@ HOTPLUG=no'''
         self.sendcmd("ifconfig %s" % bridge)
 
     def gen_qemu_ifup(self, bridge):
-        qemu_ifup = '''
-#!/bin/sh
+        qemu_ifup = '''#!/bin/sh
 switch=%s
 /sbin/ifconfig $1 0.0.0.0 up
 /usr/sbin/brctl addif ${switch} $1'''
         cmd = "echo '%s' > /tmp/qemu_ifup.cmd" % (qemu_ifup % (
             bridge))
         execute(cmd)
-        self.scp("/tmp/qemu_ifup.cmd", "/data/qemu_ifup")
+
+        rmt_qemu = '/data' + '/qemu-ifup'
+        self.scp("/tmp/qemu_ifup.cmd", rmt_qemu)
         execute("rm /tmp/qemu_ifup.cmd")
 
     def gen_raw_disk(self, path):
-        cmd = "qemu-img create -f raw %s 120G" % path
+        cmd = "qemu-img create -f raw %s 320G" % path
         self.sendcmd(cmd)
 
     def gen_sut_vm_install(self, vm_info):
@@ -173,14 +181,19 @@ switch=%s
         disk = vm_info["disk"]
         virtio = vm_info["virtio"]
 
-        vm_install = '''
-/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
--uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
--smbios type=1,manufacturer='Red Hat',product=%s,version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
+        # Generate the uuid for creating the VM
+        uuid = execute('uuidgen').strip()
+        # Generate the mac address for creating the nic of VM
+        cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
+        random_mac = execute(cmd).strip()
+
+        vm_install = '''/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
+-uuid %s \
+-smbios type=1,manufacturer="Red Hat",product="%s",version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=%s \
 -nodefconfig -rtc base=localtime,driftfix=slew -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
 -device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
 -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
--netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
 -vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
 -fda %s \
 -monitor stdio \
@@ -191,14 +204,18 @@ switch=%s
             mem,
             core,
             core,
+            uuid,
             product,
             version,
+            uuid,
             iso,
             disk,
+            random_mac,
             virtio))
         execute(cmd)
 
-        self.scp("/tmp/vm_install.cmd", "/data/vm_install.cmd")
+        rmt_install = '/data' + '/vm_install.cmd'
+        self.scp("/tmp/vm_install.cmd", rmt_install)
         execute("rm /tmp/vm_install.cmd", check=False)
 
     def gen_sut_vm_boot(self, vm_info):
@@ -210,30 +227,61 @@ switch=%s
         version = vm_info["version"]
         disk = vm_info["disk"]
 
-        vm_boot = '''
-/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
--uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
--smbios type=1,manufacturer='Red Hat',product=%s,version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
+        # Generate the uuid for creating the VM
+        uuid = execute('uuidgen').strip()
+        # Generate the mac address for creating the nic of VM
+        cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
+        random_mac = execute(cmd).strip()
+
+        vm_boot = '''/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
+-uuid %s \
+-smbios type=1,manufacturer="Red Hat",product="%s",version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=%s \
 -nodefconfig -rtc base=localtime,driftfix=slew \
 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
 -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
--netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
 -vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
 -monitor stdio \
--boot menu=on'''
+-boot menu=on  \
+-device usb-ehci,id=ehci1 -drive file=usb-storage-intel-max.raw,if=none,id=drive-usb-2-0,media=disk,format=raw,cache=none,werror=stop,rerror=stop,aio=threads -device usb-storage,bus=ehci0.0,drive=drive-usb-2-0,id=usb-2-0,removable=on -rtc base=localtime,clock=host,driftfix=slew -chardev socket,id=111a,path=/tmp/monitor-win2012R2-amd-max,server,nowait -mon chardev=111a,mode=readline
+'''
         cmd = "echo '%s' > /tmp/vm_boot.cmd" % (vm_boot % (
             vm_name,
             cpu_mode,
             mem,
             core,
             core,
+            uuid,
             product,
             version,
-            disk))
+            uuid,
+            disk,
+            random_mac))
         execute(cmd)
 
-        self.scp("/tmp/vm_boot.cmd", "/data/vm_boot.cmd")
+        rmt_boot = '/data' + '/vm_boot.cmd'
+        self.scp("/tmp/vm_boot.cmd", rmt_boot)
         execute("rm /tmp/vm_boot.cmd", check=False)
+
+    def start_vm_install(self):
+        rmt_install = '/data' + '/vm_install.cmd'
+        cmd = "nohup sh %s &" % rmt_install
+        output = self.sendcmd(cmd)
+        thread = output.split()[-1]
+
+        time.sleep(15)
+
+        cmd = "ps %s" % thread
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            cmd = "cat ~/nohup.out"
+            nohup_out = self.sendcmd(cmd)
+            raise Exception("Failed to start VM install due to:\n%s" % nohup_out)
+
+
+class SC(Server):
+    pass
 
 
 class Config:
@@ -292,93 +340,9 @@ def execute(cmd, check=True):
         return out
 
 
-def gen_bridge(hostname, user, passwd, bridge, nic):
-    server = Server(hostname, user, passwd)
-
-    # Copy the nic configure file to the remote server
-    ifcfg_cfg = '''
-DEVICE=%s
-HWADDR=%s
-BRIDGE=%s
-ONBOOT=yes
-NM_CONTROLLED=no
-IPV6_AUTOCONF=no
-PEERNTP=yes
-IPV6INIT=no'''
-    cmd_get_mac = "ifconfig -a |grep '^%s'" % nic
-    output = server.sendcmd(cmd_get_mac)
-    mac = output.split()[-1]
-
-    cmd = "echo '%s' > /tmp/ifcfg_nic.cfg" % (ifcfg_cfg % (
-        nic,
-        mac,
-        bridge))
+def remote_view(ipport):
+    cmd = "remote-viewer vnc://%s &" % ipport
     execute(cmd)
-
-    server.scp("/tmp/ifcfg_nic.cfg", "/data/ifcfg_nic.cfg")
-    server.sendcmd("mv -f /data/ifcfg_nic.cfg /etc/sysconfig/network-scripts/ifcfg-%s" % nic)
-
-    # Copy the bridge configure file to the remote server
-    ifcfg_br = '''
-DEVICE=%s
-TYPE=Bridge
-DELAY=0
-STP=off
-ONBOOT=yes
-BOOTPROTO=dhcp
-DEFROUTE=yes
-NM_CONTROLLED=no
-IPV6_AUTOCONF=no
-PEERNTP=yes
-IPV6INIT=no
-HOTPLUG=no'''
-    cmd = "echo '%s' > /tmp/ifcfg_br.cfg" % (ifcfg_br % (
-        bridge))
-    execute(cmd)
-
-    server.scp("/tmp/ifcfg_br.cfg", "/data/ifcfg_br.cfg")
-    execute("rm /tmp/ifcfg_br.cfg")
-
-    server.sendcmd("mv -f /data/ifcfg_br.cfg /etc/sysconfig/network-scripts/ifcfg-%s" % bridge)
-
-    cmd = "brctl addbr %s " % bridge
-    server.sendcmd(cmd)
-    cmd = "brctl addif %s %s" % (bridge, nic)
-    server.sendcmd(cmd)
-    cmd = "ifup %s" % bridge
-    server.sendcmd(cmd, check=False)
-    server.sendcmd("ifconfig %s" % bridge)
-
-
-def gen_sut_vm_install(hostname, user, passwd, vm_name, cpu_mode, mem, core, product, version, iso, network_script, vritio):
-    server = Server(hostname, user, passwd)
-    vm_install = '''
-/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %s -smp %s,cores=2 \
--uuid e48f4f59-7efa-45c6-b2be-ead3605ed62b \
--smbios type=1,manufacturer='Red Hat',product=%S,version=%S,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=ddbe6671-7ba7-4e7a-a62e-241a82ff600b \
--nodefconfig -rtc base=localtime,driftfix=slew -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
--device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0 -drive file=win2012r2.raw,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
--device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
--netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:00:46:fe:70,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
--vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
--fda virtio-win-1.7.5_amd64.vfd \
--monitor stdio \
--boot menu=on'''
-    cmd = "echo '%s' > /tmp/vm_install.cmd" % (vm_install % (
-        vm_name,
-        cpu_mode,
-        mem,
-        core,
-        core,
-        product,
-        version,
-        iso,
-        network_script,
-        vritio))
-    execute(cmd)
-
-    server.scp("/tmp/vm_install.cmd", "/data/vm_install.cmd")
-    execute("rm /tmp/vm_install.cmd", check=False)
 
 
 def info_print(string):
