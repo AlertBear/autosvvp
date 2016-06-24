@@ -76,6 +76,10 @@ exit'''
 
 
 class Sut(Server):
+    def __init__(self):
+        super(Server, self).__init__()
+        self.work_path = "/data"
+
     def gen_bridge(self, bridge, nic):
         # Copy the nic configure file to the remote server
         ifcfg_cfg = '''
@@ -97,7 +101,7 @@ IPV6INIT=no'''
             bridge))
         execute(cmd)
 
-        rmt_ifcfgnic = '/data' + '/ifcfg_nic.cfg'
+        rmt_ifcfgnic = self.work_path + '/ifcfg_nic.cfg'
         self.scp("/tmp/ifcfg_nic.cfg", rmt_ifcfgnic)
         self.sendcmd("mv -f %s /etc/sysconfig/network-scripts/ifcfg-%s" % (rmt_ifcfgnic, nic))
 
@@ -119,7 +123,7 @@ HOTPLUG=no'''
             bridge))
         execute(cmd)
 
-        rmt_ifcfgbr = '/data' + '/ifcfg_br.cfg'
+        rmt_ifcfgbr = self.work_path + '/ifcfg_br.cfg'
         self.scp("/tmp/ifcfg_br.cfg", rmt_ifcfgbr)
         execute("rm /tmp/ifcfg_br.cfg")
 
@@ -196,7 +200,7 @@ switch=%s
             bridge))
         execute(cmd)
 
-        rmt_qemu = '/data' + '/qemu-ifup'
+        rmt_qemu = self.work_path + '/qemu-ifup'
         self.scp("/tmp/qemu_ifup.cmd", rmt_qemu)
         execute("rm /tmp/qemu_ifup.cmd")
 
@@ -248,7 +252,7 @@ switch=%s
             virtio))
         execute(cmd)
 
-        rmt_install = '/data' + '/vm_install.cmd'
+        rmt_install = self.work_path + '/vm_install.cmd'
         self.scp("/tmp/vm_install.cmd", rmt_install)
         execute("rm /tmp/vm_install.cmd", check=False)
 
@@ -293,13 +297,13 @@ switch=%s
             random_mac))
         execute(cmd)
 
-        rmt_boot = '/data' + '/vm_boot.cmd'
+        rmt_boot = self.work_path + '/vm_boot.cmd'
         self.scp("/tmp/vm_boot.cmd", rmt_boot)
         execute("rm /tmp/vm_boot.cmd", check=False)
 
     def start_vm_install(self):
-        rmt_install = '/data' + '/vm_install.cmd'
-        cmd = "nohup sh %s > /data/nohup.out 2>&1 &" % rmt_install
+        rmt_install = self.work_path + '/vm_install.cmd'
+        cmd = "nohup sh %s > %s/nohup.out 2>&1 &" % (rmt_install, self.work_path)
         output = self.sendcmd(cmd)
         thread = output.split()[-1]
 
@@ -315,7 +319,9 @@ switch=%s
 
 
 class Sc(Server):
-    pass
+    def __init__(self):
+        super(Server, self).__init__()
+        self.work_path = "/data"
 
 
 class Config:
