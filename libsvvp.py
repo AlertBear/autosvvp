@@ -5,6 +5,7 @@ import sys
 import ConfigParser
 import subprocess
 import time
+import tempfile
 
 
 class ExecError(Exception):
@@ -145,13 +146,46 @@ HOTPLUG=no'''
         self.sendcmd(cmd)
 
         # Add the route to avoid the disconnection from remote server
-        # cmd = "route add "
-        # ????????????
-        pass
-
+        # Firstly, get the default gateway
+        cmd = "route -n|grep '^0.0.0.0'|grep -v %s|grep -v %s" % (nic, bridge)
+        output = self.sendcmd(cmd)
+        s, tmpfile = tempfile.mkstemp()
+        with open(tmpfile, 'w') as f:
+            f.write(output)
+        cmd = "sed -n '/^0.0.0.0/p' %s" % tmpfile
+        output = execute(cmd)
+        default_gw = output.split()[1]
+        # Add a route to avoid the disconnection by "ifup bridge"
+        cmd = "route add -net 10.0.0.0/8 gw %s" % default_gw
+        self.sendcmd(cmd)
+        # ifup the bridge, may create the default gateway
         cmd = "ifup %s" % bridge
         self.sendcmd(cmd, check=False)
-        self.sendcmd("ifconfig %s" % bridge)
+        # Add the original gateway
+        cmd = "route -n|grep UG|grep '^0.0.0.0'|grep %s" % default_gw
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            cmd = "route add default gw %s" % default_gw
+            self.sendcmd(cmd)
+        # Delete the 192.168 gateway since no impact for internal comunicatation
+        cmd = "route -n|grep '^0.0.0.0'|grep %s" % bridge
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            pass
+        else:
+            cmd = "route -n|grep '^0.0.0.0'|grep %s|awk '{print $2}'" % bridge
+            self.sendcmd(cmd, check=False)
+        # Delete the new add route if the original gateway were added
+        cmd = "route -n|grep UG|grep '^0.0.0.0'|grep %s" % default_gw
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            pass
+        else:
+            cmd = "route del -net 10.0.0.0/8 gw %s" % default_gw
+            self.sendcmd(cmd, check=False)
 
     def gen_qemu_ifup(self, bridge):
         qemu_ifup = '''#!/bin/sh
