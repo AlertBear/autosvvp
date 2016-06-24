@@ -39,6 +39,7 @@ if __name__ == "__main__":
     # Get the virtio file
     vm_virtio = cfg.get('VM', 'VIRTIO')
 
+    info_print("START TO SET THE SUT\n######################################")
     # First copy the iso file to the SUT
     sut = Sut(sut_hostname, sut_user, sut_password)
     info_print("Copying the windows iso file to the SUT...")
@@ -117,3 +118,6 @@ if __name__ == "__main__":
     # View the vm from remote-viewer
     ipport = sut_hostname + ":" + "5900"
     remote_view(ipport)
+
+    info_print("COMPLETE SET THE SUT\n######################################")
+    sys.exit(0)

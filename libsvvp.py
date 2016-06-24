@@ -132,11 +132,11 @@ HOTPLUG=no'''
             pass
         else:
             # Get the device under the existing bridge
-            cmd = "brctl show"
-            cmd = "brctl delif %s %s" % bridge
+            cmd = "ifdown %s" % bridge
+            self.sendcmd(cmd, check=False)
+
             cmd = "brctl delbr %s" % bridge
-            #????????????
-            pass
+            self.sendcmd(cmd)
 
         # Add the bridge and interface
         cmd = "brctl addbr %s " % bridge
@@ -146,7 +146,7 @@ HOTPLUG=no'''
 
         # Add the route to avoid the disconnection from remote server
         # cmd = "route add "
-        #????????????
+        # ????????????
         pass
 
         cmd = "ifup %s" % bridge
@@ -265,7 +265,7 @@ switch=%s
 
     def start_vm_install(self):
         rmt_install = '/data' + '/vm_install.cmd'
-        cmd = "nohup sh %s &" % rmt_install
+        cmd = "nohup sh %s > /data/nohup.out 2>&1 &" % rmt_install
         output = self.sendcmd(cmd)
         thread = output.split()[-1]
 
@@ -280,7 +280,7 @@ switch=%s
             raise Exception("Failed to start VM install due to:\n%s" % nohup_out)
 
 
-class SC(Server):
+class Sc(Server):
     pass
 
 
@@ -342,7 +342,8 @@ def execute(cmd, check=True):
 
 def remote_view(ipport):
     cmd = "remote-viewer vnc://%s &" % ipport
-    execute(cmd)
+    subprocess.Popen(cmd, shell=True)
+    # execute(cmd)
 
 
 def info_print(string):

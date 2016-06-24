@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
-from libsvvp import Server
+
+from libsvvp import Sc
 
 
 if __name__ == "__main__":
