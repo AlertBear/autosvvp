@@ -76,9 +76,18 @@ exit'''
 
 
 class Sut(Server):
-    def __init__(self):
-        super(Server, self).__init__()
-        self.work_path = "/data"
+    def __init__(self, hostname, user, password, workdir='/data'):
+        super(Sut, self).__init__(hostname, user, password)
+        self._make_workdir(workdir)
+        self.workdir = workdir
+
+    def _make_workdir(self, workdir):
+        cmd = "test -d %s" % workdir
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            cmd = "mkdir -p %s" % workdir
+            self.sendcmd(cmd)
 
     def gen_bridge(self, bridge, nic):
         # Copy the nic configure file to the remote server
@@ -91,9 +100,9 @@ NM_CONTROLLED=no
 IPV6_AUTOCONF=no
 PEERNTP=yes
 IPV6INIT=no'''
-        cmd_get_mac = "ifconfig -a |grep '^%s'" % nic
+        cmd_get_mac = "ip link show %s|grep 'link/ether'" % nic
         output = self.sendcmd(cmd_get_mac)
-        mac = output.split()[-1]
+        mac = output.split()[1]
 
         cmd = "echo '%s' > /tmp/ifcfg_nic.cfg" % (ifcfg_cfg % (
             nic,
@@ -101,7 +110,7 @@ IPV6INIT=no'''
             bridge))
         execute(cmd)
 
-        rmt_ifcfgnic = self.work_path + '/ifcfg_nic.cfg'
+        rmt_ifcfgnic = self.workdir + '/ifcfg_nic.cfg'
         self.scp("/tmp/ifcfg_nic.cfg", rmt_ifcfgnic)
         self.sendcmd("mv -f %s /etc/sysconfig/network-scripts/ifcfg-%s" % (rmt_ifcfgnic, nic))
 
@@ -123,14 +132,14 @@ HOTPLUG=no'''
             bridge))
         execute(cmd)
 
-        rmt_ifcfgbr = self.work_path + '/ifcfg_br.cfg'
+        rmt_ifcfgbr = self.workdir + '/ifcfg_br.cfg'
         self.scp("/tmp/ifcfg_br.cfg", rmt_ifcfgbr)
         execute("rm /tmp/ifcfg_br.cfg")
 
         self.sendcmd("mv -f %s /etc/sysconfig/network-scripts/ifcfg-%s" % (rmt_ifcfgbr, bridge))
 
         # Delete the bridge if exists
-        cmd = "ifconfig %s" % bridge
+        cmd = "ip link show %s" % bridge
         try:
             self.sendcmd(cmd)
         except ExecError:
@@ -151,57 +160,61 @@ HOTPLUG=no'''
 
         # Add the route to avoid the disconnection from remote server
         # Firstly, get the default gateway
-        cmd = "route -n|grep '^0.0.0.0'|grep -v %s|grep -v %s" % (nic, bridge)
+        cmd = "ip route list|grep default|grep -v %s|grep -v %s" % (nic, bridge)
         output = self.sendcmd(cmd)
         s, tmpfile = tempfile.mkstemp()
         with open(tmpfile, 'w') as f:
             f.write(output)
-        cmd = "sed -n '/^0.0.0.0/p' %s" % tmpfile
+        cmd = "sed -n '/^default/p' %s" % tmpfile
         output = execute(cmd)
-        default_gw = output.split()[1]
+        default_gw = output.split()[2]
         # Add a route to avoid the disconnection by "ifup bridge"
-        cmd = "route add -net 10.0.0.0/8 gw %s" % default_gw
+        cmd = "ip route add 10.0.0.0/8 via %s" % default_gw
         self.sendcmd(cmd)
         # ifup the bridge, may create the default gateway
         cmd = "ifup %s" % bridge
         self.sendcmd(cmd, check=False)
-        # Add the original gateway
-        cmd = "route -n|grep UG|grep '^0.0.0.0'|grep %s" % default_gw
-        try:
-            self.sendcmd(cmd)
-        except ExecError:
-            cmd = "route add default gw %s" % default_gw
-            self.sendcmd(cmd)
+
         # Delete the 192.168 gateway since no impact for internal comunicatation
-        cmd = "route -n|grep '^0.0.0.0'|grep %s" % bridge
+        cmd = "ip route list|grep default|grep %s" % bridge
         try:
             self.sendcmd(cmd)
         except ExecError:
             pass
         else:
-            cmd = "route -n|grep '^0.0.0.0'|grep %s|awk '{print $2}'" % bridge
-            self.sendcmd(cmd, check=False)
+            cmd = "ip route del default"
+            self.sendcmd(cmd)
+
+        # Add the original gateway
+        cmd = "ip route list|grep default|grep %s" % default_gw
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            cmd = "ip route add default via %s" % default_gw
+            self.sendcmd(cmd)
         # Delete the new add route if the original gateway were added
-        cmd = "route -n|grep UG|grep '^0.0.0.0'|grep %s" % default_gw
+        cmd = "ip route list|grep default|grep %s" % default_gw
         try:
             self.sendcmd(cmd)
         except ExecError:
             pass
         else:
-            cmd = "route del -net 10.0.0.0/8 gw %s" % default_gw
+            cmd = "ip route del 10.0.0.0/8"
             self.sendcmd(cmd, check=False)
 
     def gen_qemu_ifup(self, bridge):
         qemu_ifup = '''#!/bin/sh
 switch=%s
-/sbin/ifconfig $1 0.0.0.0 up
+/sbin/ip link set $1 up
 /usr/sbin/brctl addif ${switch} $1'''
         cmd = "echo '%s' > /tmp/qemu_ifup.cmd" % (qemu_ifup % (
             bridge))
         execute(cmd)
 
-        rmt_qemu = self.work_path + '/qemu-ifup'
+        rmt_qemu = self.workdir + '/qemu-ifup'
         self.scp("/tmp/qemu_ifup.cmd", rmt_qemu)
+        cmd = "chmod +x %s" % rmt_qemu
+        self.sendcmd(cmd)
         execute("rm /tmp/qemu_ifup.cmd")
 
     def gen_raw_disk(self, path):
@@ -231,7 +244,7 @@ switch=%s
 -nodefconfig -rtc base=localtime,driftfix=slew -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
 -device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
 -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
--netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
 -vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
 -fda %s \
 -monitor stdio \
@@ -248,11 +261,12 @@ switch=%s
             uuid,
             iso,
             disk,
+            self.workdir,
             random_mac,
             virtio))
         execute(cmd)
 
-        rmt_install = self.work_path + '/vm_install.cmd'
+        rmt_install = self.workdir + '/vm_install.cmd'
         self.scp("/tmp/vm_install.cmd", rmt_install)
         execute("rm /tmp/vm_install.cmd", check=False)
 
@@ -277,7 +291,7 @@ switch=%s
 -nodefconfig -rtc base=localtime,driftfix=slew \
 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
 -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
--netdev tap,script=/data/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
 -vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
 -monitor stdio \
 -boot menu=on  \
@@ -294,16 +308,17 @@ switch=%s
             version,
             uuid,
             disk,
+            self.workdir,
             random_mac))
         execute(cmd)
 
-        rmt_boot = self.work_path + '/vm_boot.cmd'
+        rmt_boot = self.workdir + '/vm_boot.cmd'
         self.scp("/tmp/vm_boot.cmd", rmt_boot)
         execute("rm /tmp/vm_boot.cmd", check=False)
 
     def start_vm_install(self):
-        rmt_install = self.work_path + '/vm_install.cmd'
-        cmd = "nohup sh %s > %s/nohup.out 2>&1 &" % (rmt_install, self.work_path)
+        rmt_install = self.workdir + '/vm_install.cmd'
+        cmd = "nohup sh %s > %s/nohup.out 2>&1 &" % (rmt_install, self.workdir)
         output = self.sendcmd(cmd)
         thread = output.split()[-1]
 
@@ -313,15 +328,24 @@ switch=%s
         try:
             self.sendcmd(cmd)
         except ExecError:
-            cmd = "cat ~/nohup.out"
+            cmd = "cat %s/nohup.out" % self.workdir
             nohup_out = self.sendcmd(cmd)
             raise Exception("Failed to start VM install due to:\n%s" % nohup_out)
 
 
 class Sc(Server):
-    def __init__(self):
-        super(Server, self).__init__()
-        self.work_path = "/data"
+    def __init__(self, hostname, username, password, workdir='~/autosvvp'):
+        super(Sc, self).__init__(hostname, username, password)
+        self._make_workdir(workdir)
+        self.workdir = workdir
+
+    def _make_workdir(self, workdir):
+        cmd = "test -d %s" % workdir
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            cmd = "mkdir -p %s" % self.workdir
+            self.sendcmd(cmd)
 
 
 class Config:

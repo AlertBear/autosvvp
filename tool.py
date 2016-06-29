@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-from libsvvp import Server, Config
+from libsvvp import Sut, Sc, Config
 
 
 if __name__ == "__main__":

@@ -11,40 +11,36 @@ if __name__ == "__main__":
     cfg_file = "./svvp.ini"
     cfg = Config(cfg_file)
 
+    # Get the rhvh product and version
+    rhvh = cfg.get("RHVH", 'PRODUCT')
+    rhvh_ver = cfg.get("RHVH", "VERSION")
     # Get the SUT info
     sut_hostname = cfg.get('SUT', 'HOSTNAME')
     sut_user = cfg.get('SUT', 'USER')
     sut_password = cfg.get('SUT', 'PASSWORD')
-
     # Get the network info for configuring the SUT VM
-    sut_bridge = cfg.get('VM_REQUIRE', 'BRIDGE')
-    sut_nic = cfg.get('VM_REQUIRE', 'NIC')
-
+    sut_bridge = cfg.get('SUT', 'BRIDGE')
+    sut_nic = cfg.get('SUT', 'NIC')
     # Get the VM info
-    sut_vm = cfg.get('VM', 'NAME')
-    sut_vm_cpu_count = cfg.get('VM', 'CPU_COUNT')
-    sut_vm_cpu_mode = cfg.get('VM', 'CPU_MODE')
-    sut_vm_mem = cfg.get('VM', 'MEM')
-
-    # Get the VM requirement owrk path
-    work_path = cfg.get('VM_REQUIRE', 'path')
-
-    # Get the rhvh product and version
-    rhvh = cfg.get("RHVH", 'PRODUCT')
-    rhvh_ver = cfg.get("RHVH", "VERSION")
-
+    sut_vm = cfg.get('SUT_VM', 'NAME')
+    sut_vm_cpu_count = cfg.get('SUT_VM', 'CPU_COUNT')
+    sut_vm_cpu_mode = cfg.get('SUT_VM', 'CPU_MODE')
+    sut_vm_mem = cfg.get('SUT_VM', 'MEM')
     # Get the ISO directory
-    win_iso = cfg.get('VM', 'ISO')
-
+    win_iso = cfg.get('REQUIRE', 'ISO')
     # Get the virtio file
-    vm_virtio = cfg.get('VM', 'VIRTIO')
+    vm_virtio = cfg.get('REQUIRE', 'VIRTIO')
 
-    info_print("START TO SET THE SUT\n######################################")
-    # First copy the iso file to the SUT
-    sut = Sut(sut_hostname, sut_user, sut_password)
+    # Sut workdir
+    workdir = cfg.get('SUT', 'WORKDIR')
+
+    sut = Sut(sut_hostname, sut_user, sut_password, workdir)
+
+    info_print("START SET THE SUT\n######################################")
+    # Copy the windows iso file to the SUT
     info_print("Copying the windows iso file to the SUT...")
     win_iso_name = win_iso.split('/')[-1]
-    sut_iso_path = work_path + '/' + win_iso_name
+    sut_iso_path = workdir + '/' + win_iso_name
     try:
         sut.scp(win_iso, sut_iso_path)
     except Exception as e:
@@ -54,9 +50,9 @@ if __name__ == "__main__":
     # Copy the virtio file to the SUT
     info_print("Copying the virtio file to the SUT...")
     vm_virtio_name = vm_virtio.split('/')[-1]
-    sut_virtio_path = work_path + '/' + vm_virtio_name
+    sut_virtio_path = workdir + '/' + vm_virtio_name
     try:
-        sut.scp(win_iso, sut_virtio_path)
+        sut.scp(vm_virtio, sut_virtio_path)
     except Exception as e:
         error_print("Failed scp virtio due to: \n%s" % e)
         sys.exit(1)
@@ -79,7 +75,7 @@ if __name__ == "__main__":
 
     # Generate the VM disk on the SUT
     win_raw = 'windows.raw'
-    disk = work_path + '/' + win_raw
+    disk = workdir + '/' + win_raw
     info_print("Generating the virtual disk on the SUT...")
     try:
         sut.gen_raw_disk(disk)
@@ -95,7 +91,7 @@ if __name__ == "__main__":
         "core": sut_vm_cpu_count,
         "product": rhvh,
         "version": rhvh_ver,
-        "iso": sut_virtio_path,
+        "iso": sut_iso_path,
         "disk": disk,
         "virtio": sut_virtio_path
     }
