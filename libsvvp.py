@@ -6,6 +6,7 @@ import ConfigParser
 import subprocess
 import time
 import tempfile
+import random
 
 
 class ExecError(Exception):
@@ -270,6 +271,22 @@ switch=%s
         self.scp("/tmp/vm_install.cmd", rmt_install)
         execute("rm /tmp/vm_install.cmd", check=False)
 
+    def start_vm_install(self):
+        rmt_install = self.workdir + '/vm_install.cmd'
+        cmd = "nohup sh %s > %s/nohup.out 2>&1 &" % (rmt_install, self.workdir)
+        output = self.sendcmd(cmd)
+        thread = output.split()[-1]
+
+        time.sleep(15)
+
+        cmd = "ps %s" % thread
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            cmd = "cat %s/nohup.out" % self.workdir
+            nohup_out = self.sendcmd(cmd)
+            raise Exception("Failed to start VM install due to:\n%s" % nohup_out)
+
     def gen_sut_vm_boot(self, vm_info):
         vm_name = vm_info["vm_name"]
         cpu_mode = vm_info["cpu_mode"]
@@ -295,7 +312,6 @@ switch=%s
 -vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
 -monitor stdio \
 -boot menu=on  \
--device usb-ehci,id=ehci1 -drive file=usb-storage-intel-max.raw,if=none,id=drive-usb-2-0,media=disk,format=raw,cache=none,werror=stop,rerror=stop,aio=threads -device usb-storage,bus=ehci0.0,drive=drive-usb-2-0,id=usb-2-0,removable=on -rtc base=localtime,clock=host,driftfix=slew -chardev socket,id=111a,path=/tmp/monitor-win2012R2-amd-max,server,nowait -mon chardev=111a,mode=readline
 '''
         cmd = "echo '%s' > /tmp/vm_boot.cmd" % (vm_boot % (
             vm_name,
@@ -316,25 +332,105 @@ switch=%s
         self.scp("/tmp/vm_boot.cmd", rmt_boot)
         execute("rm /tmp/vm_boot.cmd", check=False)
 
-    def start_vm_install(self):
-        rmt_install = self.workdir + '/vm_install.cmd'
-        cmd = "nohup sh %s > %s/nohup.out 2>&1 &" % (rmt_install, self.workdir)
-        output = self.sendcmd(cmd)
-        thread = output.split()[-1]
+    def gen_sut_vm_boot_usb(self, vm_info):
+        vm_name = vm_info["vm_name"]
+        cpu_mode = vm_info["cpu_mode"]
+        mem = vm_info["mem"]
+        core = vm_info["core"]
+        product = vm_info["product"]
+        version = vm_info["version"]
+        disk = vm_info["disk"]
+        usb_disk = vm_info["usb_disk"]
 
-        time.sleep(15)
+        # Generate the uuid for creating the VM
+        uuid = execute('uuidgen').strip()
+        # Generate the mac address for creating the nic of VM
+        cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
+        random_mac = execute(cmd).strip()
 
-        cmd = "ps %s" % thread
-        try:
-            self.sendcmd(cmd)
-        except ExecError:
-            cmd = "cat %s/nohup.out" % self.workdir
-            nohup_out = self.sendcmd(cmd)
-            raise Exception("Failed to start VM install due to:\n%s" % nohup_out)
+        vm_boot = '''/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
+-uuid %s \
+-smbios type=1,manufacturer="Red Hat",product="%s",version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=%s \
+-nodefconfig -rtc base=localtime,driftfix=slew \
+-drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-monitor stdio \
+-boot menu=on  \
+-device usb-ehci,id=ehci1 -drive file=%s,if=none,id=drive-usb-2-0,media=disk,format=raw,cache=none,werror=stop,rerror=stop,aio=threads -device usb-storage,bus=ehci0.0,drive=drive-usb-2-0,id=usb-2-0,removable=on -rtc base=localtime,clock=host,driftfix=slew
+'''
+        cmd = "echo '%s' > /tmp/vm_boot_usb.cmd" % (vm_boot % (
+            vm_name,
+            cpu_mode,
+            mem,
+            core,
+            core,
+            uuid,
+            product,
+            version,
+            uuid,
+            disk,
+            self.workdir,
+            random_mac,
+            usb_disk))
+        execute(cmd)
+
+        rmt_boot = self.workdir + '/vm_boot_usb.cmd'
+        self.scp("/tmp/vm_boot_usb.cmd", rmt_boot)
+        execute("rm /tmp/vm_boot_usb.cmd", check=False)
+
+    def gen_sut_vm_boot_debug_net(self, vm_info):
+        vm_name = vm_info["vm_name"]
+        cpu_mode = vm_info["cpu_mode"]
+        mem = vm_info["mem"]
+        core = vm_info["core"]
+        product = vm_info["product"]
+        version = vm_info["version"]
+        disk = vm_info["disk"]
+
+        # Generate the uuid for creating the VM
+        uuid = execute('uuidgen').strip()
+        # Generate the mac address for creating the nic of VM
+        cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
+        random_mac = execute(cmd).strip()
+
+        vm_boot = '''/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
+-uuid %s \
+-smbios type=1,manufacturer="Red Hat",product="%s",version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=%s \
+-nodefconfig -rtc base=localtime,driftfix=slew \
+-drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-monitor stdio \
+-boot menu=on  \
+-netdev tap,id=hostnet1,vhost=on,script=%s/qemu-ifup -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=53:53:%s
+'''
+        cmd = "echo '%s' > /tmp/vm_boot_debug.cmd" % (vm_boot % (
+            vm_name,
+            cpu_mode,
+            mem,
+            core,
+            core,
+            uuid,
+            product,
+            version,
+            uuid,
+            disk,
+            self.workdir,
+            random_mac,
+            self.workdir,
+            random_mac))
+        execute(cmd)
+
+        rmt_boot = self.workdir + '/vm_boot_debug.cmd'
+        self.scp("/tmp/vm_boot_debug.cmd", rmt_boot)
+        execute("rm /tmp/vm_boot_debug.cmd", check=False)
 
 
 class Sc(Server):
-    def __init__(self, hostname, username, password, workdir='~/autosvvp'):
+    def __init__(self, hostname, username, password, workdir='/home/svvp'):
         super(Sc, self).__init__(hostname, username, password)
         self._make_workdir(workdir)
         self.workdir = workdir
@@ -346,6 +442,45 @@ class Sc(Server):
         except ExecError:
             cmd = "mkdir -p %s" % self.workdir
             self.sendcmd(cmd)
+
+    def gen_sc_vm_install(self, vm_info):
+
+        monitor_random = random.randint(0, 1000)
+        vm_install = '''/usr/libexec/qemu-kvm -name %s -m 4G -smp 2 -usb -device usb-tablet \
+-drive file=%s,format=raw,if=none,id=drive-ide0-0-0,werror=stop,rerror=stop,cache=none \
+-device ide-drive,drive=drive-ide0-0-0,id=ide0-0-0,bootindex=1 \
+-netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=51:51:%s,bus=pci.0,addr=0x4 -uuid %s \
+-rtc base=localtime,clock=host,driftfix=slew  \
+-no-kvm-pit-reinjection -monitor stdio -name windows-%s -vnc :9 \
+-chardev socket,path=/tmp/tt-%s,server,nowait,id=tt-%s -mon mode=readline,chardev=tt-%s -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1 \
+        '''
+
+    def gen_sc_vm_boot(self, vm_info):
+
+        monitor_random = random.randint(0, 1000)
+        vm_install = '''/usr/libexec/qemu-kvm -name %s -m 4G -smp 2 -usb -device usb-tablet \
+-drive file=%s,format=raw,if=none,id=drive-ide0-0-0,werror=stop,rerror=stop,cache=none \
+-device ide-drive,drive=drive-ide0-0-0,id=ide0-0-0,bootindex=1 \
+-netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=51:51:%s,bus=pci.0,addr=0x4 -uuid %s \
+-rtc base=localtime,clock=host,driftfix=slew  \
+-no-kvm-pit-reinjection -monitor stdio -name windows-%s -vnc :9 \
+-chardev socket,path=/tmp/tt-%s,server,nowait,id=tt-%s -mon mode=readline,chardev=tt-%s -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1 \
+        '''
+
+    def gen_sc_vm_boot_serial(self, vm_info):
+
+        monitor_random = random.randint(0, 1000)
+        vm_install = '''/usr/libexec/qemu-kvm -name %s -m 4G -smp 2 -usb -device usb-tablet \
+-drive file=%s,format=raw,if=none,id=drive-ide0-0-0,werror=stop,rerror=stop,cache=none \
+-device ide-drive,drive=drive-ide0-0-0,id=ide0-0-0,bootindex=1 \
+-netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=51:51:%s,bus=pci.0,addr=0x4 -uuid %s \
+-rtc base=localtime,clock=host,driftfix=slew  \
+-no-kvm-pit-reinjection -monitor stdio -name windows-%s -vnc :9 \
+-chardev socket,path=/tmp/tt-%s,server,nowait,id=tt-%s -mon mode=readline,chardev=tt-%s -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1 \
+-netdev tap,id=hostnet1,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=52:52:%s
+-serial tcp:0:%s,server,nowait
+        '''
+
 
 
 class Config:

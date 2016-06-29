@@ -19,8 +19,9 @@ if __name__ == "__main__":
     sut_user = cfg.get('SUT', 'USER')
     sut_password = cfg.get('SUT', 'PASSWORD')
     # Get the network info for configuring the SUT VM
-    sut_bridge = cfg.get('SUT', 'BRIDGE')
     sut_nic = cfg.get('SUT', 'NIC')
+    sut_bridge = 'br' + sut_nic
+
     # Get the VM info
     sut_vm = cfg.get('SUT_VM', 'NAME')
     sut_vm_cpu_count = cfg.get('SUT_VM', 'CPU_COUNT')
