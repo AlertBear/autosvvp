@@ -30,10 +30,9 @@ class Config:
 
 
 def _check_config(conf, type):
+    cfg = Config(conf)
+    cfg_eles = []
     if type == 'sut':
-        cfg = Config(conf)
-
-        cfg_eles = []
         # Get the SUT info
         sut_hostname = cfg.get('SUT', 'HOSTNAME')
         cfg_eles.append(sut_hostname)
@@ -71,10 +70,36 @@ def _check_config(conf, type):
         # Get the virtio file
         vm_virtio = cfg.get('SUT_VM', 'VIRTIO')
         cfg_eles.append(vm_virtio)
+    else:
+        # Get the SC info
+        sc_hostname = cfg.get('SC', 'HOSTNAME')
+        cfg_eles.append(sc_hostname)
+        sc_user = cfg.get('SC', 'USER')
+        cfg_eles.append(sc_user)
+        sc_password = cfg.get('SC', 'PASSWORD')
+        cfg_eles.append(sc_password)
 
-        for ele in cfg_eles:
-            if not ele:
-                raise Exception("Required configuration variable is not set")
+        # Get the network info for configuring the SC VM
+        sc_nic = cfg.get('SC', 'NIC')
+        cfg_eles.append(sc_nic)
+
+        # Get the VM info
+        sc_vm1 = cfg.get('SC_VM_1', 'NAME')
+        cfg_eles.append(sc_vm1)
+        sc_vm1_cpu_count = cfg.get('SC_VM_1', 'CORE')
+        cfg_eles.append(sc_vm1_cpu_count)
+        sc_vm1_mem = cfg.get('SC_VM_1', 'MEM')
+        cfg_eles.append(sc_vm1_mem)
+        sc_vm2 = cfg.get('SC_VM_2', 'NAME')
+        cfg_eles.append(sc_vm2)
+        sc_vm2_cpu_count = cfg.get('SC_VM_2', 'CORE')
+        cfg_eles.append(sc_vm2_cpu_count)
+        sc_vm2_mem = cfg.get('SC_VM_2', 'MEM')
+        cfg_eles.append(sc_vm2_mem)
+
+    for ele in cfg_eles:
+        if not ele:
+            raise Exception("Required configuration variable is not set")
 
 
 def _help(arg):

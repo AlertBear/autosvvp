@@ -20,7 +20,7 @@ if __name__ == "__main__":
     sut_password = cfg.get('SUT', 'PASSWORD')
     # Get the network info for configuring the SUT VM
     sut_nic = cfg.get('SUT', 'NIC')
-    sut_bridge = 'br' + sut_nic
+    sut_bridge = sut_nic + 'br0'
 
     # Get the VM info
     sut_vm = cfg.get('SUT_VM', 'NAME')
