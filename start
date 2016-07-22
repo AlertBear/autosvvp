@@ -42,20 +42,20 @@ def _check_config(conf, type):
         cfg_eles.append(sut_password)
 
         # Get the network info for configuring the SUT VM
-        sut_bridge = cfg.get('SUT_VM', 'BRIDGE')
-        cfg_eles.append(sut_bridge)
-        sut_nic = cfg.get('SUT_VM', 'NIC')
+        sut_nic = cfg.get('SUT', 'NIC')
         cfg_eles.append(sut_nic)
 
         # Get the VM info
-        sut_vm = cfg.get('VM', 'NAME')
+        sut_vm = cfg.get('SUT_VM', 'NAME')
         cfg_eles.append(sut_vm)
-        sut_vm_cpu_count = cfg.get('VM', 'CPU_COUNT')
+        sut_vm_cpu_count = cfg.get('SUT_VM', 'CPU_COUNT')
         cfg_eles.append(sut_vm_cpu_count)
-        sut_vm_cpu_mode = cfg.get('VM', 'CPU_MODE')
+        sut_vm_cpu_mode = cfg.get('SUT_VM', 'CPU_MODE')
         cfg_eles.append(sut_vm_cpu_mode)
-        sut_vm_mem = cfg.get('VM', 'MEM')
+        sut_vm_mem = cfg.get('SUT_VM', 'MEM')
         cfg_eles.append(sut_vm_mem)
+        sut_vncport = cfg.get('SUT_VM', 'VNC')
+        cfg_eles.append(sut_vncport)
 
         # Get the rhvh product and version
         rhvh = cfg.get("RHVH", 'PRODUCT')
@@ -64,11 +64,11 @@ def _check_config(conf, type):
         cfg_eles.append(rhvh_ver)
 
         # Get the ISO directory
-        win_iso = cfg.get('SUT_VM', 'ISO')
+        win_iso = cfg.get('REQUIRE', 'ISO')
         cfg_eles.append(win_iso)
 
         # Get the virtio file
-        vm_virtio = cfg.get('SUT_VM', 'VIRTIO')
+        vm_virtio = cfg.get('REQUIRE', 'VIRTIO')
         cfg_eles.append(vm_virtio)
     else:
         # Get the SC info
@@ -90,12 +90,16 @@ def _check_config(conf, type):
         cfg_eles.append(sc_vm1_cpu_count)
         sc_vm1_mem = cfg.get('SC_VM_1', 'MEM')
         cfg_eles.append(sc_vm1_mem)
+        sc_vm1_vnc = cfg.get('SC_VM_1', 'VNC')
+        cfg_eles.append(sc_vm1_vnc)
         sc_vm2 = cfg.get('SC_VM_2', 'NAME')
         cfg_eles.append(sc_vm2)
         sc_vm2_cpu_count = cfg.get('SC_VM_2', 'CORE')
         cfg_eles.append(sc_vm2_cpu_count)
         sc_vm2_mem = cfg.get('SC_VM_2', 'MEM')
         cfg_eles.append(sc_vm2_mem)
+        sc_vm2_vnc = cfg.get('SC_VM_2', 'VNC')
+        cfg_eles.append(sc_vm2_vnc)
 
     for ele in cfg_eles:
         if not ele:

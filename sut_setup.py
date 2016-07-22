@@ -27,6 +27,7 @@ if __name__ == "__main__":
     sut_vm_cpu_count = cfg.get('SUT_VM', 'CPU_COUNT')
     sut_vm_cpu_mode = cfg.get('SUT_VM', 'CPU_MODE')
     sut_vm_mem = cfg.get('SUT_VM', 'MEM')
+    sut_vm_vncport = cfg.get('SUT_VM', 'VNC')
     # Get the ISO directory
     win_iso = cfg.get('REQUIRE', 'ISO')
     # Get the virtio file
@@ -37,7 +38,7 @@ if __name__ == "__main__":
 
     sut = Sut(sut_hostname, sut_user, sut_password, workdir)
 
-    info_print("START SET THE SUT\n######################################")
+    print "##########################START SET THE SUT###########################"
     # Copy the windows iso file to the SUT
     info_print("Copying the windows iso file to the SUT...")
     win_iso_name = win_iso.split('/')[-1]
@@ -94,7 +95,8 @@ if __name__ == "__main__":
         "version": rhvh_ver,
         "iso": sut_iso_path,
         "disk": disk,
-        "virtio": sut_virtio_path
+        "virtio": sut_virtio_path,
+        "vncport": sut_vm_vncport
     }
     info_print("Generating the VM installation command file on the SUT...")
     try:
@@ -113,8 +115,9 @@ if __name__ == "__main__":
 
     time.sleep(5)
     # View the vm from remote-viewer
-    ipport = sut_hostname + ":" + "5900"
+    sut_vm_vncport = str(5900 + int(sut_vm_vncport))
+    ipport = sut_hostname + ':' + sut_vm_vncport
     remote_view(ipport)
 
-    info_print("COMPLETE SET THE SUT\n######################################")
+    print "##########################COMPLETE SET THE SUT###########################"
     sys.exit(0)

@@ -6,7 +6,6 @@ import ConfigParser
 import subprocess
 import time
 import tempfile
-import random
 
 
 class ExecError(Exception):
@@ -245,6 +244,9 @@ switch=%s
         iso = vm_info["iso"]
         disk = vm_info["disk"]
         virtio = vm_info["virtio"]
+        vncport = vm_info.get("vncport")
+        if not vncport:
+            vncport = 0
 
         # Generate the uuid for creating the VM
         uuid = execute('uuidgen').strip()
@@ -261,9 +263,9 @@ switch=%s
 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
 -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
 -netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
--vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-vnc :%s -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
 -fda %s \
--monitor stdio \
+-monitor stdio -name %s \
 -boot menu=on'''
         cmd = "echo '%s' > /tmp/vm_install.cmd" % (vm_install % (
             vm_name,
@@ -279,7 +281,9 @@ switch=%s
             disk,
             self.workdir,
             random_mac,
-            virtio))
+            vncport,
+            virtio,
+            vm_name))
         execute(cmd)
 
         rmt_install = self.workdir + '/vm_install.cmd'
@@ -311,7 +315,9 @@ switch=%s
         version = vm_info["version"]
         disk = vm_info["disk"]
         iso = vm_info["iso"]
-
+        vncport = vm_info.get("vncport")
+        if not vncport:
+            vncport = 0
         # Generate the uuid for creating the VM
         uuid = execute('uuidgen').strip()
         # Generate the mac address for creating the nic of VM
@@ -327,8 +333,8 @@ switch=%s
 -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
 -device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0 \
 -netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
--vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
--monitor stdio \
+-vnc :%s -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-monitor stdio -name %s \
 -boot menu=on  \
 '''
         cmd = "echo '%s' > /tmp/vm_boot.cmd" % (vm_boot % (
@@ -344,7 +350,9 @@ switch=%s
             disk,
             iso,
             self.workdir,
-            random_mac))
+            random_mac,
+            vncport,
+            vm_name))
         execute(cmd)
 
         rmt_boot = self.workdir + '/vm_boot.cmd'
@@ -360,7 +368,9 @@ switch=%s
         version = vm_info["version"]
         disk = vm_info["disk"]
         usb_disk = vm_info["usb_disk"]
-
+        vncport = vm_info.get("vncport")
+        if not vncport:
+            vncport = 0
         # Generate the uuid for creating the VM
         uuid = execute('uuidgen').strip()
         # Generate the mac address for creating the nic of VM
@@ -374,9 +384,9 @@ switch=%s
 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
 -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
 -netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
--vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
--monitor stdio \
--boot menu=on  \
+-vnc :%s -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-monitor stdio -name %s\
+-boot menu=on \
 -device usb-ehci,id=ehci1 -drive file=%s,if=none,id=drive-usb-2-0,media=disk,format=raw,cache=none,werror=stop,rerror=stop,aio=threads -device usb-storage,bus=ehci0.0,drive=drive-usb-2-0,id=usb-2-0,removable=on -rtc base=localtime,clock=host,driftfix=slew
 '''
         cmd = "echo '%s' > /tmp/vm_boot_usb.cmd" % (vm_boot % (
@@ -392,6 +402,8 @@ switch=%s
             disk,
             self.workdir,
             random_mac,
+            vncport,
+            vm_name,
             usb_disk))
         execute(cmd)
 
@@ -407,7 +419,9 @@ switch=%s
         product = vm_info["product"]
         version = vm_info["version"]
         disk = vm_info["disk"]
-
+        vncport = vm_info.get("vncport")
+        if not vncport:
+            vncport = 0
         # Generate the uuid for creating the VM
         uuid = execute('uuidgen').strip()
         # Generate the mac address for creating the nic of VM
@@ -421,12 +435,12 @@ switch=%s
 -drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
 -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
 -netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
--vnc :0 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
--monitor stdio \
+-vnc :%s -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-monitor stdio -name %s\
 -boot menu=on  \
 -netdev tap,id=hostnet1,vhost=on,script=%s/qemu-ifup -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=53:53:%s
 '''
-        cmd = "echo '%s' > /tmp/vm_boot_debug.cmd" % (vm_boot % (
+        cmd = "echo '%s' > /tmp/vm_boot_debug_net.cmd" % (vm_boot % (
             vm_name,
             cpu_mode,
             mem,
@@ -439,13 +453,73 @@ switch=%s
             disk,
             self.workdir,
             random_mac,
+            vncport,
+            vm_name,
             self.workdir,
             random_mac))
         execute(cmd)
 
-        rmt_boot = self.workdir + '/vm_boot_debug.cmd'
-        self.scp("/tmp/vm_boot_debug.cmd", rmt_boot)
-        execute("rm /tmp/vm_boot_debug.cmd", check=False)
+        rmt_boot = self.workdir + '/vm_boot_debug_net.cmd'
+        self.scp("/tmp/vm_boot_debug_net.cmd", rmt_boot)
+        execute("rm /tmp/vm_boot_debug_net.cmd", check=False)
+
+    def gen_sut_vm_boot_debug_serial(self, vm_info):
+        vm_name = vm_info["vm_name"]
+        cpu_mode = vm_info["cpu_mode"]
+        mem = vm_info["mem"]
+        core = vm_info["core"]
+        product = vm_info["product"]
+        version = vm_info["version"]
+        disk = vm_info["disk"]
+        vncport = vm_info.get("vncport")
+        if not vncport:
+            vncport = 0
+        serialport = vm_info.get("serialport")
+        sc_hostip = vm_info["sc_hostip"]
+        if not serialport:
+            serialport = 4555
+        # Generate the uuid for creating the VM
+        uuid = execute('uuidgen').strip()
+        # Generate the mac address for creating the nic of VM
+        cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
+        random_mac = execute(cmd).strip()
+
+        vm_boot = '''/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm -m %sG -smp %s,cores=%s \
+-uuid %s \
+-smbios type=1,manufacturer="Red Hat",product="%s",version=%s,serial=4C4C4544-0056-4210-8032-C3C04F463358,uuid=%s \
+-nodefconfig -rtc base=localtime,driftfix=slew \
+-drive file=%s,if=none,format=raw,cache=none,werror=stop,rerror=stop,id=drive-virtio-disk0,aio=native \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x5,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-netdev tap,script=%s/qemu-ifup,id=hostnet0,vhost=on -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:52:%s,bus=pci.0 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 -device usb-tablet,id=tablet0 -device usb-ehci,id=ehci0 \
+-vnc :%s -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
+-monitor stdio  -name %s\
+-boot menu=on  \
+-serial tcp:%s:%s
+'''
+        cmd = "echo '%s' > /tmp/vm_boot_debug_net.cmd" % (vm_boot % (
+            vm_name,
+            cpu_mode,
+            mem,
+            core,
+            core,
+            uuid,
+            product,
+            version,
+            uuid,
+            disk,
+            self.workdir,
+            random_mac,
+            vncport,
+            self.workdir,
+            random_mac,
+            vm_name,
+            sc_hostip,
+            serialport))
+        execute(cmd)
+
+        rmt_boot = self.workdir + '/vm_boot_debug_net.cmd'
+        self.scp("/tmp/vm_boot_debug_net.cmd", rmt_boot)
+        execute("rm /tmp/vm_boot_debug_net.cmd", check=False)
 
 
 class Sc(Server):
@@ -459,7 +533,7 @@ class Sc(Server):
         try:
             self.sendcmd(cmd)
         except ExecError:
-            cmd = "mkdir -p %s" % self.workdir
+            cmd = "mkdir -p %s" % workdir
             self.sendcmd(cmd)
 
     def gen_bridge(self, bridge, nic):
@@ -604,24 +678,26 @@ switch=%s
         core = vm_info["core"]
         iso = vm_info["iso"]
         disk = vm_info["disk"]
-
+        virtio = vm_info["virtio"]
+        vncport = vm_info.get("vncport")
+        if not vncport:
+            vncport = 0
         # Generate the mac address for creating the nic of VM
         cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
         random_mac = execute(cmd).strip()
         # Generate the uuid for creating the VM
         uuid = execute('uuidgen').strip()
-        monitor_random = str(random.randint(0, 1000))
 
         sc_vm_install = '''/usr/libexec/qemu-kvm -name %s -m %sG -smp %s -usb -device usb-tablet \
 -drive file=%s,format=raw,if=none,id=drive-ide0-0-0,werror=stop,rerror=stop,cache=none \
 -device ide-drive,drive=drive-ide0-0-0,id=ide0-0-0,bootindex=1 \
 -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
--device ide-drive,bus=ide.1,unit=0,drive=drive-ide0-1-0,id=ide0-1-0
--netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=51:51:%s,bus=pci.0,addr=0x4 -uuid %s \
+-device ide-drive,bus=ide.1,drive=drive-ide0-1-0,id=ide0-1-0 \
+-netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=00:52:%s,bus=pci.0,addr=0x4 -uuid %s \
+-fda %s \
 -rtc base=localtime,clock=host,driftfix=slew  \
--no-kvm-pit-reinjection -monitor stdio -name windows-%s -vnc :0 \
--chardev socket,path=/tmp/tt-%s,server,nowait,id=tt-%s -mon mode=readline,chardev=tt-%s -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1 \
-        '''
+-monitor stdio -name %s -vnc :%s \
+-chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1'''
 
         cmd = "echo '%s' > /tmp/sc_vm_install_%s.cmd" % (sc_vm_install % (
             vm_name,
@@ -632,10 +708,9 @@ switch=%s
             self.workdir,
             random_mac,
             uuid,
-            monitor_random,
-            monitor_random,
-            monitor_random,
-            monitor_random), vm_name)
+            virtio,
+            vm_name,
+            vncport), vm_name)
         execute(cmd)
 
         rmt_install = self.workdir + '/sc_vm_install_%s.cmd' % vm_name
@@ -663,22 +738,22 @@ switch=%s
         mem = vm_info["mem"]
         core = vm_info["core"]
         disk = vm_info["disk"]
-
+        vncport = vm_info.get("vncport")
+        if not vncport:
+            vncport = 0
         # Generate the mac address for creating the nic of VM
         cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
         random_mac = execute(cmd).strip()
         # Generate the uuid for creating the VM
         uuid = execute('uuidgen').strip()
-        monitor_random = random.randint(0, 1000)
 
         sc_vm_boot = '''/usr/libexec/qemu-kvm -name %s -m %sG -smp % -usb -device usb-tablet \
 -drive file=%s,format=raw,if=none,id=drive-ide0-0-0,werror=stop,rerror=stop,cache=none \
 -device ide-drive,drive=drive-ide0-0-0,id=ide0-0-0,bootindex=1 \
--netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=51:51:%s,bus=pci.0,addr=0x4 -uuid %s \
+-netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=00:52:%s,bus=pci.0,addr=0x4 -uuid %s \
 -rtc base=localtime,clock=host,driftfix=slew  \
--no-kvm-pit-reinjection -monitor stdio -name windows-%s -vnc :0 \
--chardev socket,path=/tmp/tt-%s,server,nowait,id=tt-%s -mon mode=readline,chardev=tt-%s -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1 \
-        '''
+-monitor stdio -name %s -vnc :%s \
+-chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1'''
 
         cmd = "echo '%s' > /tmp/sc_vm_boot_%s.cmd" % (sc_vm_boot % (
             vm_name,
@@ -688,10 +763,8 @@ switch=%s
             self.workdir,
             random_mac,
             uuid,
-            monitor_random,
-            monitor_random,
-            monitor_random,
-            monitor_random), vm_name)
+            vm_name,
+            vncport), vm_name)
         execute(cmd)
 
         rmt_boot = self.workdir + '/sc_vm_boot_%s.cmd' % vm_name
@@ -703,24 +776,28 @@ switch=%s
         mem = vm_info["mem"]
         core = vm_info["core"]
         disk = vm_info["disk"]
+        vncport = vm_info.get("vncport")
+        if not vncport:
+            vncport = 0
+        serialport = vm_info.get("serialport")
+        if not serialport:
+            serialport = 4555
 
         # Generate the mac address for creating the nic of VM
         cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
         random_mac = execute(cmd).strip()
         # Generate the uuid for creating the VM
         uuid = execute('uuidgen').strip()
-        monitor_random = random.randint(0, 1000)
 
         sc_vm_boot_debug_serial = '''/usr/libexec/qemu-kvm -name %s -m %sG -smp % -usb -device usb-tablet \
 -drive file=%s,format=raw,if=none,id=drive-ide0-0-0,werror=stop,rerror=stop,cache=none \
 -device ide-drive,drive=drive-ide0-0-0,id=ide0-0-0,bootindex=1 \
--netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=51:51:%s,bus=pci.0,addr=0x4 -uuid %s \
+-netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=00:52:%s,bus=pci.0,addr=0x4 -uuid %s \
 -rtc base=localtime,clock=host,driftfix=slew  \
--no-kvm-pit-reinjection -monitor stdio -name windows-%s -vnc :0 \
--chardev socket,path=/tmp/tt-%s,server,nowait,id=tt-%s -mon mode=readline,chardev=tt-%s -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1 \
--netdev tap,id=hostnet1,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=52:52:%s
--serial tcp:0:4555,server,nowait
-        '''
+-monitor stdio -name %s -vnc :%s \
+-chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1 \
+-netdev tap,id=hostnet1,script=%s/qemu-ifup1,vhost=on -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=52:52:%s
+-serial tcp:0:%s,server,nowait'''
         cmd = "echo '%s' > /tmp/sc_vm_boot_debug_serial_%s.cmd" % (sc_vm_boot_debug_serial % (
             vm_name,
             mem,
@@ -729,12 +806,11 @@ switch=%s
             self.workdir,
             random_mac,
             uuid,
-            monitor_random,
-            monitor_random,
-            monitor_random,
-            monitor_random,
+            vm_name,
+            vncport,
             self.workdir,
-            random_mac), vm_name)
+            random_mac,
+            serialport), vm_name)
         execute(cmd)
 
         rmt_boot = self.workdir + '/sc_vm_boot_debug_serial_%s.cmd' % vm_name

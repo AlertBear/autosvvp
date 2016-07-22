@@ -23,9 +23,11 @@ if __name__ == "__main__":
     sc_vm1 = cfg.get('SC_VM_1', 'NAME')
     sc_vm1_cpu_count = cfg.get('SC_VM_1', 'CORE')
     sc_vm1_mem = cfg.get('SC_VM_1', 'MEM')
+    sc_vm1_vnc = cfg.get('SC_VM_1', 'VNC')
     sc_vm2 = cfg.get('SC_VM_2', 'NAME')
     sc_vm2_cpu_count = cfg.get('SC_VM_2', 'CORE')
     sc_vm2_mem = cfg.get('SC_VM_2', 'MEM')
+    sc_vm2_vnc = cfg.get('SC_VM_2', 'VNC')
     # Get the ISO directory
     win_iso = cfg.get('REQUIRE', 'ISO')
     # Get the virtio file
@@ -36,7 +38,7 @@ if __name__ == "__main__":
 
     sc = Sc(sc_hostname, sc_user, sc_password, workdir)
 
-    info_print("START SET THE SC\n######################################")
+    print "#######################START SET THE SC##########################"
     # Copy the windows iso file to the sc
     info_print("Copying the windows iso file to the SC...")
     win_iso_name = win_iso.split('/')[-1]
@@ -45,6 +47,16 @@ if __name__ == "__main__":
         sc.scp(win_iso, sc_iso_path)
     except Exception as e:
         error_print("Failed scp iso due to: \n%s" % e)
+        sys.exit(1)
+
+    # Copy the virtio file to the SUT
+    info_print("Copying the virtio file to the SC...")
+    vm_virtio_name = vm_virtio.split('/')[-1]
+    sc_virtio_path = workdir + '/' + vm_virtio_name
+    try:
+        sc.scp(vm_virtio, sc_virtio_path)
+    except Exception as e:
+        error_print("Failed scp virtio due to: \n%s" % e)
         sys.exit(1)
 
     # Generate the qemu_ifup script
@@ -88,6 +100,8 @@ if __name__ == "__main__":
         "core": sc_vm1_cpu_count,
         "iso": sc_iso_path,
         "disk": disk1,
+        "virtio": vm_virtio,
+        "vncport": sc_vm1_vnc
     }
     info_print("Generating the VM1 installation command file on the SC...")
     try:
@@ -103,6 +117,8 @@ if __name__ == "__main__":
         "core": sc_vm2_cpu_count,
         "iso": sc_iso_path,
         "disk": disk2,
+        "virtio": sc_virtio_path,
+        "vncport": sc_vm2_vnc
     }
     info_print("Generating the VM2 installation command file on the SC...")
     try:
@@ -121,7 +137,8 @@ if __name__ == "__main__":
 
     time.sleep(5)
     # View the vm from remote-viewer
-    ipport1 = sc_hostname + ":" + "5900"
+    sc_vm1_vncport = str(5900 + int(sc_vm1_vnc))
+    ipport1 = sc_hostname + ":" + sc_vm1_vncport
     remote_view(ipport1)
 
     # Startup to install the windows2 on the SC
@@ -134,8 +151,9 @@ if __name__ == "__main__":
 
     time.sleep(5)
     # View the vm from remote-viewer
-    ipport2 = sc_hostname + ":" + "5901"
+    sc_vm2_vncport = str(5900 + int(sc_vm2_vnc))
+    ipport2 = sc_hostname + ":" + sc_vm2_vncport
     remote_view(ipport2)
 
-    info_print("COMPLETE SET THE SC\n######################################")
+    print "#####################COMPLETE SET THE SC##########################"
     sys.exit(0)
