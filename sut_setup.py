@@ -62,7 +62,7 @@ if __name__ == "__main__":
     # Generate the qemu_ifup script
     info_print("Generating the qemu_ifup file on the SUT...")
     try:
-        sut.gen_qemu_ifup(sut_bridge)
+        sut.gen_internal_qemu_ifup(sut_bridge)
     except Exception:
         traceback.print_exc()
         sys.exit(1)
@@ -70,23 +70,33 @@ if __name__ == "__main__":
     # Generate the bridge on the SUT
     info_print("Generating the network bridge on the SUT...")
     try:
-        sut.gen_bridge(sut_bridge, sut_nic)
+        sut.gen_internal_bridge(sut_bridge, sut_nic)
     except Exception:
         traceback.print_exc()
         sys.exit(1)
 
     # Generate the VM disk on the SUT
-    win_raw = 'windows.raw'
+    win_raw = 'sut_vm_windows.raw'
     disk = workdir + '/' + win_raw
     info_print("Generating the virtual disk on the SUT...")
     try:
-        sut.gen_raw_disk(disk)
+        sut.gen_raw_disk(disk, '320G')
+    except Exception:
+        traceback.print_exc()
+        sys.exit(1)
+
+    # Generate the USB disk on the SUT
+    usb_raw = 'sut_vm_usb.raw'
+    usb_disk = workdir + '/' + usb_raw
+    info_print("Generating the virtual USB disk on the SUT...")
+    try:
+        sut.gen_raw_disk(usb_disk, '8G')
     except Exception:
         traceback.print_exc()
         sys.exit(1)
 
     # Generate the VM installation command file
-    vf_info = {
+    vm_info = {
         "vm_name": sut_vm,
         "cpu_mode": sut_vm_cpu_mode,
         "mem": sut_vm_mem,
@@ -95,12 +105,13 @@ if __name__ == "__main__":
         "version": rhvh_ver,
         "iso": sut_iso_path,
         "disk": disk,
+        "usb_disk": usb_disk,
         "virtio": sut_virtio_path,
         "vncport": sut_vm_vncport
     }
     info_print("Generating the VM installation command file on the SUT...")
     try:
-        sut.gen_sut_vm_install(vf_info)
+        sut.gen_sut_vm_install(vm_info)
     except Exception:
         traceback.print_exc()
         sys.exit(1)

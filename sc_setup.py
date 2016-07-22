@@ -62,7 +62,7 @@ if __name__ == "__main__":
     # Generate the qemu_ifup script
     info_print("Generating the qemu_ifup file on the SC...")
     try:
-        sc.gen_qemu_ifup(sc_bridge)
+        sc.gen_internal_qemu_ifup(sc_bridge)
     except Exception:
         traceback.print_exc()
         sys.exit(1)
@@ -70,31 +70,31 @@ if __name__ == "__main__":
     # Generate the bridge on the sc
     info_print("Generating the network bridge on the SC...")
     try:
-        sc.gen_bridge(sc_bridge, sc_nic)
+        sc.gen_internal_bridge(sc_bridge, sc_nic)
     except Exception:
         traceback.print_exc()
         sys.exit(1)
 
     # Generate the VM disk on the SC
-    win1_raw = 'windows1.raw'
+    win1_raw = 'sc_vm1_windows.raw'
     disk1 = workdir + '/' + win1_raw
     info_print("Generating the virtual disk 1 on the SC...")
     try:
-        sc.gen_raw_disk(disk1)
+        sc.gen_raw_disk(disk1, '100G')
     except Exception:
         traceback.print_exc()
         sys.exit(1)
-    win2_raw = 'windows2.raw'
+    win2_raw = 'sc_vm2_windows.raw'
     disk2 = workdir + '/' + win2_raw
     info_print("Generating the virtual disk 2 on the SC...")
     try:
-        sc.gen_raw_disk(disk2)
+        sc.gen_raw_disk(disk2, '100G')
     except Exception:
         traceback.print_exc()
         sys.exit(1)
 
     # Generate the VM1 installation command file
-    vf_info = {
+    sc_vm1_info = {
         "vm_name": sc_vm1,
         "mem": sc_vm1_mem,
         "core": sc_vm1_cpu_count,
@@ -105,13 +105,13 @@ if __name__ == "__main__":
     }
     info_print("Generating the VM1 installation command file on the SC...")
     try:
-        sc.gen_sc_vm_install(vf_info)
+        sc.gen_sc_vm_install(sc_vm1_info)
     except Exception:
         traceback.print_exc()
         sys.exit(1)
 
     # Generate the VM2 installation command file
-    vf_info = {
+    sc_vm2_info = {
         "vm_name": sc_vm2,
         "mem": sc_vm2_mem,
         "core": sc_vm2_cpu_count,
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     }
     info_print("Generating the VM2 installation command file on the SC...")
     try:
-        sc.gen_sc_vm_install(vf_info)
+        sc.gen_sc_vm_install(sc_vm2_info)
     except Exception:
         traceback.print_exc()
         sys.exit(1)

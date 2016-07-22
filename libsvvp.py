@@ -6,6 +6,8 @@ import ConfigParser
 import subprocess
 import time
 import tempfile
+import shutil
+import os
 
 
 class ExecError(Exception):
@@ -90,7 +92,7 @@ class Sut(Server):
             cmd = "mkdir -p %s" % workdir
             self.sendcmd(cmd)
 
-    def gen_bridge(self, bridge, nic):
+    def gen_internal_bridge(self, bridge, nic):
         # Copy the nic configure file to the remote server
         ifcfg_cfg = '''DEVICE=%s
 HWADDR=%s
@@ -215,7 +217,7 @@ HOTPLUG=no'''
             cmd = "ip route del 10.0.0.0/8"
             self.sendcmd(cmd, check=False)
 
-    def gen_qemu_ifup(self, bridge):
+    def gen_internal_qemu_ifup(self, bridge):
         qemu_ifup = '''#!/bin/sh
 switch=%s
 /sbin/ip link set $1 up
@@ -230,8 +232,8 @@ switch=%s
         self.sendcmd(cmd)
         execute("rm /tmp/qemu_ifup.cmd")
 
-    def gen_raw_disk(self, path):
-        cmd = "qemu-img create -f raw %s 320G" % path
+    def gen_raw_disk(self, path, size):
+        cmd = "qemu-img create -f raw %s %s" % (path, size)
         self.sendcmd(cmd)
 
     def gen_sut_vm_install(self, vm_info):
@@ -243,6 +245,7 @@ switch=%s
         version = vm_info["version"]
         iso = vm_info["iso"]
         disk = vm_info["disk"]
+        usb_disk = vm_info["usb_disk"]
         virtio = vm_info["virtio"]
         vncport = vm_info.get("vncport")
         if not vncport:
@@ -266,7 +269,9 @@ switch=%s
 -vnc :%s -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
 -fda %s \
 -monitor stdio -name %s \
--boot menu=on'''
+-boot menu=on \
+-device usb-ehci,id=ehci1 -drive file=%s,if=none,id=drive-usb-2-0,media=disk,format=raw,cache=none,werror=stop,rerror=stop,aio=threads -device usb-storage,bus=ehci0.0,drive=drive-usb-2-0,id=usb-2-0,removable=on -rtc base=localtime,clock=host,driftfix=slew
+'''
         cmd = "echo '%s' > /tmp/vm_install.cmd" % (vm_install % (
             vm_name,
             cpu_mode,
@@ -283,15 +288,16 @@ switch=%s
             random_mac,
             vncport,
             virtio,
-            vm_name))
+            vm_name,
+            usb_disk))
         execute(cmd)
 
-        rmt_install = self.workdir + '/vm_install.cmd'
+        rmt_install = self.workdir + '/sut_vm_install_%s.cmd' % vm_name
         self.scp("/tmp/vm_install.cmd", rmt_install)
         execute("rm /tmp/vm_install.cmd", check=False)
 
     def start_vm_install(self):
-        rmt_install = self.workdir + '/vm_install.cmd'
+        rmt_install = self.workdir + '/sut_vm_install_%s.cmd'
         cmd = "nohup sh %s > %s/nohup.out 2>&1 &" % (rmt_install, self.workdir)
         output = self.sendcmd(cmd)
         thread = output.split()[-1]
@@ -355,7 +361,7 @@ switch=%s
             vm_name))
         execute(cmd)
 
-        rmt_boot = self.workdir + '/vm_boot.cmd'
+        rmt_boot = self.workdir + '/sut_vm_boot_%s.cmd' % vm_name
         self.scp("/tmp/vm_boot.cmd", rmt_boot)
         execute("rm /tmp/vm_boot.cmd", check=False)
 
@@ -407,7 +413,7 @@ switch=%s
             usb_disk))
         execute(cmd)
 
-        rmt_boot = self.workdir + '/vm_boot_usb.cmd'
+        rmt_boot = self.workdir + '/sut_vm_usb_%s.cmd' % vm_name
         self.scp("/tmp/vm_boot_usb.cmd", rmt_boot)
         execute("rm /tmp/vm_boot_usb.cmd", check=False)
 
@@ -438,7 +444,7 @@ switch=%s
 -vnc :%s -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s4=1 \
 -monitor stdio -name %s\
 -boot menu=on  \
--netdev tap,id=hostnet1,vhost=on,script=%s/qemu-ifup -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=53:53:%s
+-netdev tap,id=hostnet1,vhost=on,script=%s/qemu-ifup -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=00:52:%s
 '''
         cmd = "echo '%s' > /tmp/vm_boot_debug_net.cmd" % (vm_boot % (
             vm_name,
@@ -459,7 +465,7 @@ switch=%s
             random_mac))
         execute(cmd)
 
-        rmt_boot = self.workdir + '/vm_boot_debug_net.cmd'
+        rmt_boot = self.workdir + '/sut_vm_debug_net_%s.cmd' % vm_name
         self.scp("/tmp/vm_boot_debug_net.cmd", rmt_boot)
         execute("rm /tmp/vm_boot_debug_net.cmd", check=False)
 
@@ -496,7 +502,7 @@ switch=%s
 -boot menu=on  \
 -serial tcp:%s:%s
 '''
-        cmd = "echo '%s' > /tmp/vm_boot_debug_net.cmd" % (vm_boot % (
+        cmd = "echo '%s' > /tmp/vm_boot_debug_serial.cmd" % (vm_boot % (
             vm_name,
             cpu_mode,
             mem,
@@ -517,9 +523,47 @@ switch=%s
             serialport))
         execute(cmd)
 
-        rmt_boot = self.workdir + '/vm_boot_debug_net.cmd'
-        self.scp("/tmp/vm_boot_debug_net.cmd", rmt_boot)
-        execute("rm /tmp/vm_boot_debug_net.cmd", check=False)
+        rmt_boot = self.workdir + '/sut_vm_debug_serial_%s.cmd' % vm_name
+        self.scp("/tmp/vm_boot_debug_serial.cmd", rmt_boot)
+        execute("rm /tmp/vm_boot_debug_serial.cmd", check=False)
+
+    def copy_sut_vm_boot_debug_net(self, vm_info):
+        vm_name = vm_info["vm_name"]
+        cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
+        random_mac = execute(cmd).strip()
+
+        # Check the SUT vm install script created
+        vm_install_script = self.workdir + '/sut_vm_debug_net_%s' % vm_name
+        if not os.path.isfile(vm_install_script):
+            raise Exception("No SUT install script found, please install the SUT firstly")
+        # Copy the install script and modify it
+        vm_debug_net_script = self.workdir + '/sut_vm_debug_net_%s' % vm_name
+        shutil.copyfile(vm_install_script, vm_debug_net_script)
+        # Modify the new copied vm_boot script
+        net_para = "-netdev tap,id=hostnet1,vhost=on,script=%s/qemu-ifup -device e1000," \
+                   "netdev=hostnet1,addr=0x9,id=net1,mac=00:52:%s" % (self.workdir, random_mac)
+
+        with open(vm_debug_net_script, 'a') as f:
+            f.write(net_para)
+
+    def copy_sut_vm_boot_debug_serial(self, vm_info):
+        vm_name = vm_info["vm_name"]
+        serialport = vm_info.get("serialport")
+        sc_hostip = vm_info["sc_hostip"]
+        if not serialport:
+            serialport = 4555
+
+        # Check the SUT vm install script created
+        vm_install_script = self.workdir + '/sut_vm_debug_serial_%s' % vm_name
+        if not os.path.isfile(vm_install_script):
+            raise Exception("No SUT install script found, please install the SUT firstly")
+        # Copy the install script and modify it
+        vm_debug_serial_script = self.workdir + '/sut_vm_debug_serial_%s' % vm_name
+        shutil.copyfile(vm_install_script, vm_debug_serial_script)
+        # Modify the new copied vm_boot script
+        serial_para = " -serial tcp:%s:%s" % (sc_hostip, serialport)
+        with open(vm_debug_serial_script, 'a') as f:
+            f.write(serial_para)
 
 
 class Sc(Server):
@@ -536,7 +580,7 @@ class Sc(Server):
             cmd = "mkdir -p %s" % workdir
             self.sendcmd(cmd)
 
-    def gen_bridge(self, bridge, nic):
+    def gen_internal_bridge(self, bridge, nic):
         # Copy the nic configure file to the remote server
         ifcfg_cfg = '''DEVICE=%s
 HWADDR=%s
@@ -653,7 +697,7 @@ HOTPLUG=no'''
             cmd = "ip route del 10.0.0.0/8"
             self.sendcmd(cmd, check=False)
 
-    def gen_qemu_ifup(self, bridge):
+    def gen_internal_qemu_ifup(self, bridge):
         qemu_ifup = '''#!/bin/sh
 switch=%s
 /sbin/ip link set $1 up
@@ -668,8 +712,94 @@ switch=%s
         self.sendcmd(cmd)
         execute("rm /tmp/qemu_ifup.cmd")
 
-    def gen_raw_disk(self, path):
-        cmd = "qemu-img create -f raw %s 100G" % path
+    def gen_public_bridge(self, bridge, nic):
+        # Copy the nic configure file to the remote server
+        ifcfg_cfg = '''DEVICE=%s
+HWADDR=%s
+BRIDGE=%s
+ONBOOT=yes
+NM_CONTROLLED=no
+IPV6_AUTOCONF=no
+PEERNTP=yes
+IPV6INIT=no'''
+        cmd_get_mac = "ip link show %s|grep 'link/ether'" % nic
+        output = self.sendcmd(cmd_get_mac)
+        mac = output.split()[1]
+
+        cmd = "echo '%s' > /tmp/ifcfg_nic.cfg" % (ifcfg_cfg % (
+            nic,
+            mac,
+            bridge))
+        execute(cmd)
+
+        rmt_ifcfgnic = self.workdir + '/ifcfg_nic.cfg'
+        self.scp("/tmp/ifcfg_nic.cfg", rmt_ifcfgnic)
+        self.sendcmd("mv -f %s /etc/sysconfig/network-scripts/ifcfg-%s" % (rmt_ifcfgnic, nic))
+
+        # Copy the bridge configure file to the remote server
+        ifcfg_br = '''DEVICE=%s
+TYPE=Bridge
+DELAY=0
+STP=off
+ONBOOT=yes
+BOOTPROTO=dhcp
+DEFROUTE=yes
+NM_CONTROLLED=no
+IPV6_AUTOCONF=no
+PEERNTP=yes
+IPV6INIT=no
+HOTPLUG=no'''
+        cmd = "echo '%s' > /tmp/ifcfg_br.cfg" % (ifcfg_br % (
+            bridge))
+        execute(cmd)
+
+        rmt_ifcfgbr = self.workdir + '/ifcfg_br.cfg'
+        self.scp("/tmp/ifcfg_br.cfg", rmt_ifcfgbr)
+        execute("rm /tmp/ifcfg_br.cfg")
+
+        self.sendcmd("mv -f %s /etc/sysconfig/network-scripts/ifcfg-%s" % (rmt_ifcfgbr, bridge))
+
+        # Delete the bridge if exists
+        cmd = "ip link show %s" % bridge
+        try:
+            self.sendcmd(cmd)
+        except ExecError:
+            pass
+        else:
+            # Get the device under the existing bridge
+            cmd = "ifdown %s" % bridge
+            self.sendcmd(cmd, check=False)
+
+            cmd = "brctl delbr %s" % bridge
+            self.sendcmd(cmd)
+
+        # Add the bridge and interface
+        cmd = "brctl addbr %s " % bridge
+        self.sendcmd(cmd)
+        cmd = "brctl addif %s %s" % (bridge, nic)
+        self.sendcmd(cmd)
+
+        # ifup the bridge
+        cmd = "ifup %s" % bridge
+        self.sendcmd(cmd)
+
+    def gen_public_qemu_ifup(self, bridge):
+        qemu_ifup = '''#!/bin/sh
+switch=%s
+/sbin/ip link set $1 up
+/usr/sbin/brctl addif ${switch} $1'''
+        cmd = "echo '%s' > /tmp/qemu_ifup1.cmd" % (qemu_ifup % (
+            bridge))
+        execute(cmd)
+
+        rmt_qemu = self.workdir + '/qemu-ifup.pub'
+        self.scp("/tmp/qemu_ifup1.cmd", rmt_qemu)
+        cmd = "chmod +x %s" % rmt_qemu
+        self.sendcmd(cmd)
+        execute("rm /tmp/qemu_ifup1.cmd")
+
+    def gen_raw_disk(self, path, size):
+        cmd = "qemu-img create -f raw %s %s" % (path, size)
         self.sendcmd(cmd)
 
     def gen_sc_vm_install(self, vm_info):
@@ -678,7 +808,6 @@ switch=%s
         core = vm_info["core"]
         iso = vm_info["iso"]
         disk = vm_info["disk"]
-        virtio = vm_info["virtio"]
         vncport = vm_info.get("vncport")
         if not vncport:
             vncport = 0
@@ -694,7 +823,6 @@ switch=%s
 -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
 -device ide-drive,bus=ide.1,drive=drive-ide0-1-0,id=ide0-1-0 \
 -netdev tap,id=hostnet0,script=%s/qemu-ifup,vhost=on -device e1000,netdev=hostnet0,mac=00:52:%s,bus=pci.0,addr=0x4 -uuid %s \
--fda %s \
 -rtc base=localtime,clock=host,driftfix=slew  \
 -monitor stdio -name %s -vnc :%s \
 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1'''
@@ -708,7 +836,6 @@ switch=%s
             self.workdir,
             random_mac,
             uuid,
-            virtio,
             vm_name,
             vncport), vm_name)
         execute(cmd)
@@ -796,7 +923,7 @@ switch=%s
 -rtc base=localtime,clock=host,driftfix=slew  \
 -monitor stdio -name %s -vnc :%s \
 -chardev socket,path=/tmp/tt-1-1,server,nowait,id=tt-1-1 -mon mode=readline,chardev=tt-1-1 -global PIIX4_PM.disable_s3=1 -global PIIX4_PM.disable_s4=1 \
--netdev tap,id=hostnet1,script=%s/qemu-ifup1,vhost=on -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=52:52:%s
+-netdev tap,id=hostnet1,script=%s/qemu-ifup.pub,vhost=on -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=52:52:%s
 -serial tcp:0:%s,server,nowait'''
         cmd = "echo '%s' > /tmp/sc_vm_boot_debug_serial_%s.cmd" % (sc_vm_boot_debug_serial % (
             vm_name,
@@ -816,6 +943,30 @@ switch=%s
         rmt_boot = self.workdir + '/sc_vm_boot_debug_serial_%s.cmd' % vm_name
         self.scp("/tmp/sc_vm_boot_debug_serial_%s.cmd" % vm_name, rmt_boot)
         execute("rm /tmp/sc_vm_boot_serial_%s.cmd" % vm_name, check=False)
+
+    def copy_sc_vm_boot_debug_serial(self, vm_info):
+        vm_name = vm_info["vm_name"]
+        pub_bridge = vm_info["pub_bridge"]
+        serialport = vm_info.get("serialport")
+        if not serialport:
+            serialport = 4555
+        cmd = "echo $RANDOM | md5sum | sed 's/\(..\)/&:/g' | cut -c1-11"
+        random_mac = execute(cmd).strip()
+
+        # Check the SC vm install script created
+        vm_install_script = self.workdir + '/sc_vm_debug_serial_%s' % vm_name
+        if not os.path.isfile(vm_install_script):
+            raise Exception("No SC install script found, please install the SUT firstly")
+        # Copy the install script and modify it
+        vm_debug_serial_script = self.workdir + '/sc_vm_debug_serial_%s' % vm_name
+        shutil.copyfile(vm_install_script, vm_debug_serial_script)
+        # Generate the qemu-ifup.pub script
+        self.gen_public_qemu_ifup(pub_bridge)
+        # Modify the new copied vm_boot script
+        serial_para = ''''-netdev tap,id=hostnet1,script=%s/qemu-ifup.pub,vhost=on -device e1000,netdev=hostnet1,addr=0x9,id=net1,mac=00:52:%s
+-serial tcp:0:%s,server,nowait''' % (self.workdir, random_mac, serialport)
+        with open(vm_debug_serial_script, 'a') as f:
+            f.write(serial_para)
 
 
 class Config:
