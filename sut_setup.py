@@ -76,7 +76,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Generate the VM disk on the SUT
-    win_raw = 'sut_vm_windows.raw'
+    win_raw = 'sut_vm_windows_%s.raw' % sut_vm
     disk = workdir + '/' + win_raw
     info_print("Generating the virtual disk on the SUT...")
     try:
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Generate the USB disk on the SUT
-    usb_raw = 'sut_vm_usb.raw'
+    usb_raw = 'sut_vm_usb_%s.raw' % sut_vm
     usb_disk = workdir + '/' + usb_raw
     info_print("Generating the virtual USB disk on the SUT...")
     try:
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     # Startup to install the windows on the SUT
     info_print("Starting to install the windows VM...")
     try:
-        sut.start_vm_install()
+        sut.start_vm_install(sut_vm)
     except Exception:
         traceback.print_exc()
         sys.exit(1)

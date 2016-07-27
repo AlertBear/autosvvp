@@ -296,8 +296,8 @@ switch=%s
         self.scp("/tmp/vm_install.cmd", rmt_install)
         execute("rm /tmp/vm_install.cmd", check=False)
 
-    def start_vm_install(self):
-        rmt_install = self.workdir + '/sut_vm_install_%s.cmd'
+    def start_vm_install(self, vm_name):
+        rmt_install = self.workdir + '/sut_vm_install_%s.cmd' % vm_name
         cmd = "nohup sh %s > %s/nohup.out 2>&1 &" % (rmt_install, self.workdir)
         output = self.sendcmd(cmd)
         thread = output.split()[-1]
@@ -533,18 +533,29 @@ switch=%s
         random_mac = execute(cmd).strip()
 
         # Check the SUT vm install script created
-        vm_install_script = self.workdir + '/sut_vm_debug_net_%s' % vm_name
+        vm_install_script = self.workdir + '/sut_vm_install_%s.cmd' % vm_name
+        try:
+            cmd = "test -f %s" % vm_install_script
+            self.sendcmd(cmd)
+        except ExecError:
+            raise Exception("No SUT install script found, please install the SUT firstly")
+        '''
         if not os.path.isfile(vm_install_script):
             raise Exception("No SUT install script found, please install the SUT firstly")
+        '''
         # Copy the install script and modify it
-        vm_debug_net_script = self.workdir + '/sut_vm_debug_net_%s' % vm_name
-        shutil.copyfile(vm_install_script, vm_debug_net_script)
-        # Modify the new copied vm_boot script
+        cmd = "cat %s" % vm_install_script
+        output = self.sendcmd(cmd)
         net_para = "-netdev tap,id=hostnet1,vhost=on,script=%s/qemu-ifup -device e1000," \
                    "netdev=hostnet1,addr=0x9,id=net1,mac=00:52:%s" % (self.workdir, random_mac)
+        debug_net_str = output + " " + net_para
 
-        with open(vm_debug_net_script, 'a') as f:
-            f.write(net_para)
+        cmd = "echo '%s' > /tmp/sut_vm_debug_net.cmd" % debug_net_str
+        execute(cmd)
+
+        rmt_boot = self.workdir + '/sut_vm_debug_net_%s.cmd' % vm_name
+        self.scp("/tmp/sut_vm_debug_net.cmd", rmt_boot)
+        execute("rm /tmp/sut_vm_debug_net.cmd", check=False)
 
     def copy_sut_vm_boot_debug_serial(self, vm_info):
         vm_name = vm_info["vm_name"]
@@ -554,16 +565,22 @@ switch=%s
             serialport = 4555
 
         # Check the SUT vm install script created
-        vm_install_script = self.workdir + '/sut_vm_debug_serial_%s' % vm_name
+        vm_install_script = self.workdir + '/sut_vm_install_%s.cmd' % vm_name
         if not os.path.isfile(vm_install_script):
             raise Exception("No SUT install script found, please install the SUT firstly")
+
         # Copy the install script and modify it
-        vm_debug_serial_script = self.workdir + '/sut_vm_debug_serial_%s' % vm_name
-        shutil.copyfile(vm_install_script, vm_debug_serial_script)
-        # Modify the new copied vm_boot script
+        cmd = "cat %s" % vm_install_script
+        output = self.sendcmd(cmd)
         serial_para = " -serial tcp:%s:%s" % (sc_hostip, serialport)
-        with open(vm_debug_serial_script, 'a') as f:
-            f.write(serial_para)
+        debug_serial_str = output + " " + serial_para
+
+        cmd = "echo '%s' > /tmp/sut_vm_debug_serial.cmd" % debug_serial_str
+        execute(cmd)
+
+        rmt_boot = self.workdir + '/sut_vm_debug_serial_%s.cmd' % vm_name
+        self.scp("/tmp/sut_vm_debug_serial.cmd", rmt_boot)
+        execute("rm /tmp/sut_vm_debug_serial.cmd", check=False)
 
 
 class Sc(Server):

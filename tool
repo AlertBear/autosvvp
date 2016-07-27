@@ -54,54 +54,82 @@ if __name__ == "__main__":
 
     # Add the interactive mode
     parser.add_argument('-i',
+                        "--interactive",
                         action="store",
                         choices=["sut", "sc"],
                         dest="int_host",
                         help="Interactive mode with the host")
+
     # Add to check the route info
     parser.add_argument('-r',
+                        "--route",
                         action="store",
                         choices=["sut", "sc"],
                         dest="route_host",
                         help="Route info of the sut or sc")
-    # Add to review the configuration value in the svvp.ini
-    parser.add_argument('-c',
+
+    # Add to create the boot_usb file for the sut or sc
+    parser.add_argument('-u',
+                        "--usb",
                         action="store_true",
-                        dest="configuration",
+                        dest="usb",
                         default=False,
-                        help="Review the configuration value of the svvp.ini")
+                        help="Create the usb boot command script")
+
     # Add to set the boot_debug job test env for the sut and sc
     parser.add_argument('-d',
+                        "--debug",
                         action="store",
                         choices=["serial", "net"],
                         dest="debug_job",
-                        help="Setup the env of boot_debug job")
-    # Add to create the boot_usb file for the sut or sc
-    pass
+                        help="Setup the test env of Debug Capability Test")
+
+    # Add to kill the process of the VM on sut or sc
+    parser.add_argument('-k',
+                        "--kill",
+                        action="store",
+                        choices=["sut", "sc"],
+                        dest="kill_vm",
+                        help="Kill the process of VM on SUT or SC")
+
+    # Add to do cleanup work, like delete the bridge, delete the install script, etc
+    parser.add_argument('-c',
+                        "--cleanup",
+                        action="store",
+                        choices=["sut", "sc"],
+                        dest="cleanup", )
 
     args = parser.parse_args()
 
     # Interactive mode with the sut or sc
-    pass
+    if args.int_host:
+        if args.config == "sut":
+            pass
+        else:
+            pass
 
     # Check the route info
-    pass
+    if args.route_host:
+        if args.route_host == "sut":
+            sut = Sut(sut_hostname, sut_user, sut_password, sut_workdir)
+            cmd = "ip route show"
+            output = sut.sendcmd(cmd)
+            print output
+        else:
+            sc = Sc(sc_hostname, sc_user, sc_password, sc_workdir)
+            cmd = "ip route show"
+            output = sc.sendcmd(cmd)
+            print output
 
-    # Review the configuration
-    pass
+    # Create the usb boot command script on SUT
+    if args.usb:
+        pass
 
-    # Do cleanup like delete the bridge, delete the install file etc.
-    pass
-
-    # Boot the SUT with USB disk
-    pass
-
-    # Boot the SUT with serial to test debug job
+    # Setup the test env for debug_capability job test
     if args.debug_job:
-        sc = Sc(sc_hostname, sc_password, sc_workdir)
         sut = Sut(sut_hostname, sut_user, sut_password, sut_workdir)
-
         if args.debug_job == "serial":
+            sc = Sc(sc_hostname, sc_user, sc_password, sc_workdir)
             sc_vm1_info = {
                 "vm_name": sc_vm1,
                 "pub_bridge": sc_pub_bridge,
@@ -157,8 +185,9 @@ if __name__ == "__main__":
                 print "ERROR: %s" % e
                 traceback.print_exc()
                 sys.exit(1)
-    # Boot the SC with serial to test debug job
-    pass
 
     # Reset the VM
+    pass
+
+    # Do cleanup like delete the bridge, delete the install file etc.
     pass
