@@ -18,6 +18,7 @@ if __name__ == "__main__":
     # Get the network info for configuring the SC VM
     sc_nic = cfg.get('SC', 'NIC')
     sc_bridge = sc_nic + 'br0'
+    sc_cpu_mode = cfg.get('SC', 'CPU_MODE')
 
     # Get the VM info
     sc_vm1 = cfg.get('SC_VM_1', 'NAME')
@@ -96,6 +97,7 @@ if __name__ == "__main__":
     # Generate the VM1 installation command file
     sc_vm1_info = {
         "vm_name": sc_vm1,
+        "cpu_mode": sc_cpu_mode,
         "mem": sc_vm1_mem,
         "core": sc_vm1_cpu_count,
         "iso": sc_iso_path,
@@ -113,6 +115,7 @@ if __name__ == "__main__":
     # Generate the VM2 installation command file
     sc_vm2_info = {
         "vm_name": sc_vm2,
+        "cpu_mode": sc_cpu_mode,
         "mem": sc_vm2_mem,
         "core": sc_vm2_cpu_count,
         "iso": sc_iso_path,

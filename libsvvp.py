@@ -821,6 +821,7 @@ switch=%s
 
     def gen_sc_vm_install(self, vm_info):
         vm_name = vm_info["vm_name"]
+        cpu_mode = vm_info["cpu_mode"]
         mem = vm_info["mem"]
         core = vm_info["core"]
         iso = vm_info["iso"]
@@ -834,7 +835,8 @@ switch=%s
         # Generate the uuid for creating the VM
         uuid = execute('uuidgen').strip()
 
-        sc_vm_install = '''/usr/libexec/qemu-kvm -name %s -m %sG -smp %s -usb -device usb-tablet \
+        sc_vm_install = '''/usr/libexec/qemu-kvm -name %s -M pc -cpu %s -enable-kvm \
+-m %sG -smp %s -usb -device usb-tablet \
 -drive file=%s,format=raw,if=none,id=drive-ide0-0-0,werror=stop,rerror=stop,cache=none \
 -device ide-drive,drive=drive-ide0-0-0,id=ide0-0-0,bootindex=1 \
 -drive file=%s,if=none,media=cdrom,id=drive-ide0-1-0,readonly=on,format=raw,serial= \
@@ -846,6 +848,7 @@ switch=%s
 
         cmd = "echo '%s' > /tmp/sc_vm_install_%s.cmd" % (sc_vm_install % (
             vm_name,
+            cpu_mode,
             mem,
             core,
             disk,
