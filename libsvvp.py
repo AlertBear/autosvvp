@@ -974,11 +974,12 @@ switch=%s
         random_mac = execute(cmd).strip()
 
         # Check the SC vm install script created
-        vm_install_script = self.workdir + '/sc_vm_debug_serial_%s' % vm_name
+        vm_install_script = self.workdir + '/sc_vm_install_%s.cmd' % vm_name
+        print vm_install_script
         if not os.path.isfile(vm_install_script):
-            raise Exception("No SC install script found, please install the SUT firstly")
+            raise Exception("No SC install script found, please install the SC firstly")
         # Copy the install script and modify it
-        vm_debug_serial_script = self.workdir + '/sc_vm_debug_serial_%s' % vm_name
+        vm_debug_serial_script = self.workdir + '/sc_vm_debug_serial_%s.cmd' % vm_name
         shutil.copyfile(vm_install_script, vm_debug_serial_script)
         # Generate the qemu-ifup.pub script
         self.gen_public_qemu_ifup(pub_bridge)

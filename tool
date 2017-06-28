@@ -142,6 +142,7 @@ if __name__ == "__main__":
                 sc.gen_public_bridge(sc_pub_bridge, sc_pub_nic)
             except Exception as e:
                 print "ERROR: %s" % e
+
             # Create the debug_serial command script on SC
             print "Creating the debug_serial command script on SC..."
             try:
